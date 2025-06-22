@@ -9,6 +9,7 @@ help:
 	@echo "make unit-test - Run unit tests only"
 	@echo "make build     - Build the app in Xcode"
 	@echo "make run       - Build and run the app"
+	@echo "make open      - Open the built app"
 	@echo "make clean     - Clean build artifacts"
 	@echo "make help      - Show this help"
 
@@ -33,7 +34,12 @@ build:
 run:
 	@echo "Building and running app..."
 	@xcodebuild -project ticket-for-cc.xcodeproj -scheme ticket-for-cc -configuration Debug build
-	@open build/Debug/ticket-for-cc.app
+	@sleep 1
+	@open ~/Library/Developer/Xcode/DerivedData/ticket-for-cc-*/Build/Products/Debug/ticket-for-cc.app 2>/dev/null || echo "App built successfully. Run 'make open' to launch."
+
+# Open the built app
+open:
+	@open ~/Library/Developer/Xcode/DerivedData/ticket-for-cc-*/Build/Products/Debug/ticket-for-cc.app
 
 # Clean build artifacts
 clean:
