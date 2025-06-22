@@ -9,7 +9,11 @@ import SwiftUI
 import Charts
 
 struct ContentView: View {
+    #if DEBUG
     @StateObject private var dataService = MockDataService()
+    #else
+    @StateObject private var dataService = ClaudeUsageService()
+    #endif
     
     var body: some View {
         VStack(spacing: 20) {
@@ -116,6 +120,18 @@ struct ContentView: View {
             .padding(.horizontal)
             
             Spacer()
+            
+            // Error or Loading State
+            if let dataService = dataService as? ClaudeUsageService {
+                if dataService.isLoading {
+                    ProgressView("Loading usage data...")
+                        .padding()
+                } else if let error = dataService.errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .padding()
+                }
+            }
         }
         .frame(width: 600, height: 700)
         .padding(.vertical)
