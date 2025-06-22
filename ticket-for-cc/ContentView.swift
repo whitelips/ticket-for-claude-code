@@ -9,11 +9,8 @@ import SwiftUI
 import Charts
 
 struct ContentView: View {
-    #if DEBUG
-    @StateObject private var dataService = MockDataService()
-    #else
+    // @StateObject private var dataService = MockDataService()
     @StateObject private var dataService = ClaudeUsageService()
-    #endif
     
     var body: some View {
         VStack(spacing: 20) {
