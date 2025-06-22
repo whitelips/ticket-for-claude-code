@@ -43,9 +43,24 @@ struct OverviewView: View {
                     .font(.title)
                     .fontWeight(.bold)
                 
-                Text("Real-time token usage tracking")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("Session Data:")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    if !dataService.currentSession.entries.isEmpty {
+                        Text(dataService.currentSession.startTime, style: .date)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.blue)
+                    } else {
+                        Text("No recent data")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal)

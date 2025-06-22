@@ -57,7 +57,22 @@ class ClaudeUsageService: ObservableObject {
                         
                         Make sure you have recent Claude Code sessions.
                         """
+                    } else if allEntries.isEmpty && !jsonlFiles.isEmpty {
+                        self?.errorMessage = """
+                        Found \(jsonlFiles.count) JSONL files but no valid usage data.
+                        
+                        This might be because:
+                        • No recent assistant responses with usage data
+                        • Data format has changed
+                        • All entries are from user messages only
+                        
+                        Try having a conversation with Claude Code first.
+                        """
                     } else {
+                        print("📊 Loaded \(allEntries.count) usage entries from \(jsonlFiles.count) files")
+                        if let mostRecent = allEntries.last {
+                            print("📅 Most recent entry: \(mostRecent.timestamp)")
+                        }
                         self?.updateSession(with: allEntries)
                         self?.analytics.analyzeUsageData(allEntries)
                         self?.errorMessage = nil
@@ -74,20 +89,46 @@ class ClaudeUsageService: ObservableObject {
     }
     
     private func updateSession(with entries: [UsageEntry]) {
-        // Find today's entries
-        let calendar = Calendar.current
-        let startOfToday = calendar.startOfDay(for: Date())
+        guard !entries.isEmpty else {
+            currentSession = Session(startTime: Date())
+            allEntries = []
+            return
+        }
         
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // Try to find today's entries first
+        let startOfToday = calendar.startOfDay(for: now)
         let todayEntries = entries.filter { entry in
             entry.timestamp >= startOfToday
         }
         
         if !todayEntries.isEmpty {
+            // Use today's data
             currentSession = Session(startTime: todayEntries.first?.timestamp ?? startOfToday)
             currentSession.entries = todayEntries
         } else {
-            // If no entries today, create empty session
-            currentSession = Session(startTime: startOfToday)
+            // No entries today, use the most recent session (last 7 days)
+            let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+            let recentEntries = entries.filter { entry in
+                entry.timestamp >= weekAgo
+            }
+            
+            if !recentEntries.isEmpty {
+                // Use most recent day's data
+                let mostRecentDate = recentEntries.map(\.timestamp).max() ?? now
+                let mostRecentDay = calendar.startOfDay(for: mostRecentDate)
+                let dayEntries = recentEntries.filter { entry in
+                    calendar.isDate(entry.timestamp, inSameDayAs: mostRecentDay)
+                }
+                
+                currentSession = Session(startTime: dayEntries.first?.timestamp ?? mostRecentDay)
+                currentSession.entries = dayEntries
+            } else {
+                // No recent entries, create empty session
+                currentSession = Session(startTime: startOfToday)
+            }
         }
         
         allEntries = entries
