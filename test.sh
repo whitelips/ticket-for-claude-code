@@ -23,7 +23,7 @@ fi
 
 # Run Swift tests
 echo "1️⃣ Running unit tests..."
-if swift ticket-for-cc/Tests/TestRunner.swift; then
+if swift Tests/TestRunner.swift; then
     echo "${GREEN}✅ Unit tests passed${NC}"
 else
     echo "${RED}❌ Unit tests failed${NC}"

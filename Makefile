@@ -22,7 +22,7 @@ verify:
 
 # Unit tests only
 unit-test:
-	@swift ticket-for-cc/Tests/TestRunner.swift
+	@swift Tests/TestRunner.swift
 
 # Build the app
 build:
