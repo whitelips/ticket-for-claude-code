@@ -54,21 +54,46 @@ class DataParser {
     }
     
     static func getAllJSONLFiles() -> [URL] {
-        let homeURL = FileManager.default.homeDirectoryForCurrentUser
-        let claudeConfigURL = homeURL.appendingPathComponent(".config/claude")
+        let fileManager = FileManager.default
+        let homeURL = fileManager.homeDirectoryForCurrentUser
         
-        do {
-            let fileURLs = try FileManager.default.contentsOfDirectory(
-                at: claudeConfigURL,
-                includingPropertiesForKeys: nil,
-                options: .skipsHiddenFiles
-            )
+        // Check multiple possible locations
+        let possiblePaths = [
+            ".config/claude",
+            ".claude-code",
+            "Library/Application Support/Claude",
+            "Library/Application Support/claude-code",
+            ".local/share/claude",
+            ".cache/claude"
+        ]
+        
+        for path in possiblePaths {
+            let claudeURL = homeURL.appendingPathComponent(path)
             
-            return fileURLs.filter { $0.pathExtension == "jsonl" }
-                .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        } catch {
-            print("Failed to list files in ~/.config/claude: \(error)")
-            return []
+            if fileManager.fileExists(atPath: claudeURL.path) {
+                print("Found Claude directory at: \(claudeURL.path)")
+                
+                do {
+                    let fileURLs = try fileManager.contentsOfDirectory(
+                        at: claudeURL,
+                        includingPropertiesForKeys: nil,
+                        options: .skipsHiddenFiles
+                    )
+                    
+                    let jsonlFiles = fileURLs.filter { $0.pathExtension == "jsonl" }
+                        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                    
+                    if !jsonlFiles.isEmpty {
+                        print("Found \(jsonlFiles.count) JSONL files")
+                        return jsonlFiles
+                    }
+                } catch {
+                    print("Failed to list files in \(claudeURL.path): \(error)")
+                }
+            }
         }
+        
+        print("No Claude data directory found. Checked paths: \(possiblePaths)")
+        return []
     }
 }

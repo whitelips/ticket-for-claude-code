@@ -10,7 +10,29 @@ class FileMonitor {
     weak var delegate: FileMonitorDelegate?
     
     init() {
-        self.pathToWatch = NSString(string: "~/.config/claude").expandingTildeInPath
+        // Try to find the actual Claude directory
+        let fileManager = FileManager.default
+        let homeURL = fileManager.homeDirectoryForCurrentUser
+        let possiblePaths = [
+            ".config/claude",
+            ".claude-code",
+            "Library/Application Support/Claude",
+            "Library/Application Support/claude-code",
+            ".local/share/claude",
+            ".cache/claude"
+        ]
+        
+        var foundPath: String?
+        for path in possiblePaths {
+            let fullPath = homeURL.appendingPathComponent(path).path
+            if fileManager.fileExists(atPath: fullPath) {
+                foundPath = fullPath
+                break
+            }
+        }
+        
+        self.pathToWatch = foundPath ?? NSString(string: "~/.config/claude").expandingTildeInPath
+        print("FileMonitor watching: \(self.pathToWatch)")
     }
     
     func startMonitoring() {

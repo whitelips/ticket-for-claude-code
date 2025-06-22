@@ -45,9 +45,23 @@ class ClaudeUsageService: ObservableObject {
                 allEntries.sort { $0.timestamp < $1.timestamp }
                 
                 DispatchQueue.main.async {
-                    self?.updateSession(with: allEntries)
+                    if allEntries.isEmpty && jsonlFiles.isEmpty {
+                        self?.errorMessage = """
+                        No Claude usage data found.
+                        
+                        This app expects JSONL files in one of these locations:
+                        • ~/.config/claude/
+                        • ~/.claude-code/
+                        • ~/Library/Application Support/Claude/
+                        
+                        Note: The current version of Claude Code may not create local JSONL files.
+                        You may need to use a third-party tool like 'ccusage' to generate them.
+                        """
+                    } else {
+                        self?.updateSession(with: allEntries)
+                        self?.errorMessage = nil
+                    }
                     self?.isLoading = false
-                    self?.errorMessage = nil
                 }
             } catch {
                 DispatchQueue.main.async {
