@@ -3,8 +3,11 @@ import Combine
 
 class ClaudeUsageService: ObservableObject {
     @Published var currentSession: Session
+    @Published var analytics = UsageAnalyticsService()
     @Published var dailyLimit: Int = 5_000_000
     @Published var monthlyLimit: Int = 50_000_000
+    @Published var dailyCostLimit: Double = 150.0  // $150/day limit
+    @Published var monthlyCostLimit: Double = 3000.0  // $3000/month limit
     @Published var isLoading: Bool = true
     @Published var errorMessage: String?
     
@@ -56,6 +59,7 @@ class ClaudeUsageService: ObservableObject {
                         """
                     } else {
                         self?.updateSession(with: allEntries)
+                        self?.analytics.analyzeUsageData(allEntries)
                         self?.errorMessage = nil
                     }
                     self?.isLoading = false
@@ -91,6 +95,24 @@ class ClaudeUsageService: ObservableObject {
     
     var usagePercentage: Double {
         Double(currentSession.totalTokens) / Double(dailyLimit)
+    }
+    
+    var dailyCostPercentage: Double {
+        guard let todayUsage = analytics.todayUsage else { return 0.0 }
+        return todayUsage.totalCost / dailyCostLimit
+    }
+    
+    var monthlyCostPercentage: Double {
+        guard let monthUsage = analytics.currentMonthUsage else { return 0.0 }
+        return monthUsage.totalCost / monthlyCostLimit
+    }
+    
+    var todayTotalCost: Double {
+        analytics.todayUsage?.totalCost ?? 0.0
+    }
+    
+    var monthTotalCost: Double {
+        analytics.currentMonthUsage?.totalCost ?? 0.0
     }
     
     var estimatedTimeToLimit: String {

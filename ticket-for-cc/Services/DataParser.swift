@@ -67,7 +67,10 @@ class DataParser {
                     timestamp: date,
                     model: model,
                     inputTokens: usage.inputTokens + (usage.cacheCreationInputTokens ?? 0) + (usage.cacheReadInputTokens ?? 0),
-                    outputTokens: usage.outputTokens
+                    outputTokens: usage.outputTokens,
+                    sessionId: logEntry.sessionId,
+                    requestId: nil, // Could extract from requestId field if needed
+                    messageId: message.id
                 )
                 
                 entries.append(usageEntry)

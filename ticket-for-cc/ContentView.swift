@@ -9,8 +9,31 @@ import SwiftUI
 import Charts
 
 struct ContentView: View {
-    // @StateObject private var dataService = MockDataService()
     @StateObject private var dataService = ClaudeUsageService()
+    @State private var selectedTab = 0
+    
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            OverviewView(dataService: dataService)
+                .tabItem {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                    Text("Overview")
+                }
+                .tag(0)
+            
+            AnalyticsView(dataService: dataService)
+                .tabItem {
+                    Image(systemName: "chart.bar.fill")
+                    Text("Analytics")
+                }
+                .tag(1)
+        }
+        .frame(width: 800, height: 700)
+    }
+}
+
+struct OverviewView: View {
+    @ObservedObject var dataService: ClaudeUsageService
     
     var body: some View {
         VStack(spacing: 20) {
@@ -30,6 +53,13 @@ struct ContentView: View {
             // Usage Overview Cards
             HStack(spacing: 16) {
                 UsageCard(
+                    title: "Today's Cost",
+                    value: String(format: "$%.2f", dataService.todayTotalCost),
+                    icon: "dollarsign.circle",
+                    color: .green
+                )
+                
+                UsageCard(
                     title: "Total Tokens",
                     value: dataService.currentSession.totalTokens.formatted(),
                     icon: "sum",
@@ -37,44 +67,73 @@ struct ContentView: View {
                 )
                 
                 UsageCard(
-                    title: "Burn Rate",
-                    value: String(format: "%.0f/hr", dataService.currentSession.tokensPerHour),
-                    icon: "flame",
+                    title: "Active Sessions",
+                    value: "\(dataService.analytics.sessionBlocks.count)",
+                    icon: "bubble.left.and.bubble.right",
                     color: .orange
                 )
                 
                 UsageCard(
-                    title: "Time to Limit",
-                    value: dataService.estimatedTimeToLimit,
-                    icon: "clock",
+                    title: "Burn Rate",
+                    value: String(format: "%.0f/hr", dataService.currentSession.tokensPerHour),
+                    icon: "flame",
                     color: .purple
                 )
             }
             .padding(.horizontal)
             
-            // Progress Bar
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Daily Usage")
-                        .font(.headline)
-                    Spacer()
-                    Text("\(Int(dataService.usagePercentage * 100))%")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            // Cost Progress Bars
+            VStack(spacing: 16) {
+                // Daily Cost Progress
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Daily Cost Limit")
+                            .font(.headline)
+                        Spacer()
+                        Text("\(Int(dataService.dailyCostPercentage * 100))%")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    ProgressView(value: dataService.dailyCostPercentage)
+                        .progressViewStyle(LinearProgressViewStyle(tint: progressColor(for: dataService.dailyCostPercentage)))
+                        .scaleEffect(y: 2)
+                    
+                    HStack {
+                        Text("$\(dataService.todayTotalCost, specifier: "%.2f")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("$\(dataService.dailyCostLimit, specifier: "%.0f") limit")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 
-                ProgressView(value: dataService.usagePercentage)
-                    .progressViewStyle(LinearProgressViewStyle(tint: progressColor(for: dataService.usagePercentage)))
-                    .scaleEffect(y: 2)
-                
-                HStack {
-                    Text("\(dataService.currentSession.totalTokens.formatted()) tokens")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(dataService.dailyLimit.formatted()) limit")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                // Monthly Cost Progress
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Monthly Cost Limit")
+                            .font(.headline)
+                        Spacer()
+                        Text("\(Int(dataService.monthlyCostPercentage * 100))%")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    ProgressView(value: dataService.monthlyCostPercentage)
+                        .progressViewStyle(LinearProgressViewStyle(tint: progressColor(for: dataService.monthlyCostPercentage)))
+                        .scaleEffect(y: 2)
+                    
+                    HStack {
+                        Text("$\(dataService.monthTotalCost, specifier: "%.2f")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("$\(dataService.monthlyCostLimit, specifier: "%.0f") limit")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding()
