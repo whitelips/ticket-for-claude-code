@@ -10,28 +10,11 @@ class FileMonitor {
     weak var delegate: FileMonitorDelegate?
     
     init() {
-        // Try to find the actual Claude directory
-        let fileManager = FileManager.default
-        let homeURL = fileManager.homeDirectoryForCurrentUser
-        let possiblePaths = [
-            ".config/claude",
-            ".claude-code",
-            "Library/Application Support/Claude",
-            "Library/Application Support/claude-code",
-            ".local/share/claude",
-            ".cache/claude"
-        ]
+        // Claude Code stores data in ~/.claude/projects/
+        let homeURL = FileManager.default.homeDirectoryForCurrentUser
+        let claudeProjectsPath = homeURL.appendingPathComponent(".claude/projects").path
         
-        var foundPath: String?
-        for path in possiblePaths {
-            let fullPath = homeURL.appendingPathComponent(path).path
-            if fileManager.fileExists(atPath: fullPath) {
-                foundPath = fullPath
-                break
-            }
-        }
-        
-        self.pathToWatch = foundPath ?? NSString(string: "~/.config/claude").expandingTildeInPath
+        self.pathToWatch = claudeProjectsPath
         print("FileMonitor watching: \(self.pathToWatch)")
     }
     

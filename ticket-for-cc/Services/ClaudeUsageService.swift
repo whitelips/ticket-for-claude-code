@@ -49,13 +49,10 @@ class ClaudeUsageService: ObservableObject {
                         self?.errorMessage = """
                         No Claude usage data found.
                         
-                        This app expects JSONL files in one of these locations:
-                        • ~/.config/claude/
-                        • ~/.claude-code/
-                        • ~/Library/Application Support/Claude/
+                        Please use Claude Code to start a conversation first.
+                        The app reads usage data from ~/.claude/projects/
                         
-                        Note: The current version of Claude Code may not create local JSONL files.
-                        You may need to use a third-party tool like 'ccusage' to generate them.
+                        Make sure you have recent Claude Code sessions.
                         """
                     } else {
                         self?.updateSession(with: allEntries)

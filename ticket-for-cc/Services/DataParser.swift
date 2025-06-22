@@ -1,18 +1,40 @@
 import Foundation
 
-struct ClaudeLogEntry: Codable {
-    let timestamp: String
-    let conversationId: String
+// Real Claude Code data structure
+struct ClaudeMessage: Codable {
+    let id: String?
+    let role: String
+    let model: String?
+    let usage: ClaudeUsage?
+}
+
+struct ClaudeUsage: Codable {
     let inputTokens: Int
     let outputTokens: Int
-    let model: String
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case cacheCreationInputTokens = "cache_creation_input_tokens"
+        case cacheReadInputTokens = "cache_read_input_tokens"
+    }
+}
+
+struct ClaudeLogEntry: Codable {
+    let timestamp: String
+    let sessionId: String
+    let type: String
+    let message: ClaudeMessage?
+    let uuid: String
     
     enum CodingKeys: String, CodingKey {
         case timestamp
-        case conversationId = "conversation_id"
-        case inputTokens = "input_tokens"
-        case outputTokens = "output_tokens"
-        case model
+        case sessionId
+        case type
+        case message
+        case uuid
     }
 }
 
@@ -32,20 +54,25 @@ class DataParser {
             do {
                 let logEntry = try decoder.decode(ClaudeLogEntry.self, from: data)
                 
+                // Only process assistant messages with usage data
+                guard logEntry.type == "assistant",
+                      let message = logEntry.message,
+                      let usage = message.usage,
+                      let model = message.model else { continue }
+                
                 // Parse timestamp
                 guard let date = dateFormatter.date(from: logEntry.timestamp) else { continue }
                 
                 let usageEntry = UsageEntry(
                     timestamp: date,
-                    model: logEntry.model,
-                    inputTokens: logEntry.inputTokens,
-                    outputTokens: logEntry.outputTokens
+                    model: model,
+                    inputTokens: usage.inputTokens + (usage.cacheCreationInputTokens ?? 0) + (usage.cacheReadInputTokens ?? 0),
+                    outputTokens: usage.outputTokens
                 )
                 
                 entries.append(usageEntry)
             } catch {
-                // Skip malformed entries
-                print("Failed to parse line: \(error)")
+                // Skip malformed entries (this is normal for user messages)
                 continue
             }
         }
@@ -57,43 +84,49 @@ class DataParser {
         let fileManager = FileManager.default
         let homeURL = fileManager.homeDirectoryForCurrentUser
         
-        // Check multiple possible locations
-        let possiblePaths = [
-            ".config/claude",
-            ".claude-code",
-            "Library/Application Support/Claude",
-            "Library/Application Support/claude-code",
-            ".local/share/claude",
-            ".cache/claude"
-        ]
+        // Claude Code stores data in ~/.claude/projects/
+        let claudeProjectsURL = homeURL.appendingPathComponent(".claude/projects")
         
-        for path in possiblePaths {
-            let claudeURL = homeURL.appendingPathComponent(path)
-            
-            if fileManager.fileExists(atPath: claudeURL.path) {
-                print("Found Claude directory at: \(claudeURL.path)")
-                
-                do {
-                    let fileURLs = try fileManager.contentsOfDirectory(
-                        at: claudeURL,
-                        includingPropertiesForKeys: nil,
-                        options: .skipsHiddenFiles
-                    )
-                    
-                    let jsonlFiles = fileURLs.filter { $0.pathExtension == "jsonl" }
-                        .sorted { $0.lastPathComponent < $1.lastPathComponent }
-                    
-                    if !jsonlFiles.isEmpty {
-                        print("Found \(jsonlFiles.count) JSONL files")
-                        return jsonlFiles
-                    }
-                } catch {
-                    print("Failed to list files in \(claudeURL.path): \(error)")
-                }
-            }
+        guard fileManager.fileExists(atPath: claudeProjectsURL.path) else {
+            print("Claude projects directory not found at: \(claudeProjectsURL.path)")
+            return []
         }
         
-        print("No Claude data directory found. Checked paths: \(possiblePaths)")
-        return []
+        var allJSONLFiles: [URL] = []
+        
+        do {
+            // Get all project directories
+            let projectDirs = try fileManager.contentsOfDirectory(
+                at: claudeProjectsURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: .skipsHiddenFiles
+            ).filter { url in
+                (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            }
+            
+            print("Found \(projectDirs.count) project directories")
+            
+            // Get all JSONL files from each project directory
+            for projectDir in projectDirs {
+                do {
+                    let jsonlFiles = try fileManager.contentsOfDirectory(
+                        at: projectDir,
+                        includingPropertiesForKeys: nil,
+                        options: .skipsHiddenFiles
+                    ).filter { $0.pathExtension == "jsonl" }
+                    
+                    allJSONLFiles.append(contentsOf: jsonlFiles)
+                } catch {
+                    print("Failed to list files in \(projectDir.path): \(error)")
+                }
+            }
+            
+            print("Found \(allJSONLFiles.count) total JSONL files")
+            return allJSONLFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            
+        } catch {
+            print("Failed to list project directories: \(error)")
+            return []
+        }
     }
 }
