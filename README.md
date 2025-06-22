@@ -2,9 +2,10 @@
 macOS native app to monitor claude code usage
 
 ## Reference
-https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
+- https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
+- https://github.com/ryoppippi/ccusage
 
-## Report for reference
+## Report 1
 ⏺ Analysis: Mac Native App Feasibility for Claude Code Monitoring
 
 Yes, creating a Mac native app in Swift is absolutely feasible. The current Python implementation provides an excellent foundation for understanding the requirements and data flow.
