@@ -29,7 +29,7 @@ struct ContentView: View {
                     }
                     .tag(1)
             }
-            .frame(width: 800, height: 700)
+            .frame(width: 900, height: 750)
         }
     }
 }
@@ -136,7 +136,6 @@ struct OverviewView: View {
                     ProgressView(value: dataService.dailyCostPercentage)
                         .progressViewStyle(LinearProgressViewStyle(tint: progressColor(for: dataService.dailyCostPercentage)))
                         .scaleEffect(y: 2)
-                        .animation(.easeInOut(duration: 0.5), value: dataService.dailyCostPercentage)
                     
                     HStack {
                         Text("$\(dataService.todayTotalCost, specifier: "%.2f")")
@@ -163,7 +162,6 @@ struct OverviewView: View {
                     ProgressView(value: dataService.monthlyCostPercentage)
                         .progressViewStyle(LinearProgressViewStyle(tint: progressColor(for: dataService.monthlyCostPercentage)))
                         .scaleEffect(y: 2)
-                        .animation(.easeInOut(duration: 0.5), value: dataService.monthlyCostPercentage)
                     
                     HStack {
                         Text("$\(dataService.monthTotalCost, specifier: "%.2f")")
@@ -237,10 +235,8 @@ struct OverviewView: View {
                 .transition(.opacity)
             }
         }
-        .frame(width: 600, height: 700)
+        .frame(minWidth: 850, minHeight: 700)
         .padding(.vertical)
-        .animation(.easeInOut(duration: 0.2), value: dataService.isLoading)
-        .animation(.easeInOut(duration: 0.2), value: dataService.errorMessage)
     }
     
     private func progressColor(for percentage: Double) -> Color {
@@ -275,7 +271,6 @@ struct UsageCard: View {
                 .font(.title2)
                 .fontWeight(.semibold)
                 .contentTransition(.numericText())
-                .animation(.easeInOut(duration: 0.3), value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()

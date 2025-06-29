@@ -33,25 +33,18 @@ class SecurityBookmarkService {
 
             let openPanel = NSOpenPanel()
             openPanel.title = "Grant Access to Claude Configuration"
-            openPanel.message = "Please select the .claude folder (or .config/claude for newer versions) to monitor your Claude usage. This is typically located in your home directory."
+            openPanel.message = "Please select the .claude folder to monitor your Claude usage. This is typically located in your home directory."
             openPanel.prompt = "Grant Access"
             openPanel.canChooseFiles = false
             openPanel.canChooseDirectories = true
             openPanel.canCreateDirectories = false
             openPanel.allowsMultipleSelection = false
             
-            // Set default directory to user's home to show both .claude and .config
+            // Set default directory to user's home to show .claude directory
             if let realHome = self.getRealHomeDirectory() {
-                // First try .claude directory
                 let claudeURL = URL(fileURLWithPath: "\(realHome)/.claude")
                 if FileManager.default.fileExists(atPath: claudeURL.path) {
                     openPanel.directoryURL = URL(fileURLWithPath: realHome)
-                } else {
-                    // Fallback to .config directory
-                    let configURL = URL(fileURLWithPath: "\(realHome)/.config")
-                    if FileManager.default.fileExists(atPath: configURL.path) {
-                        openPanel.directoryURL = configURL
-                    }
                 }
             }
             

@@ -24,13 +24,7 @@ class FileMonitor {
                 // Watch the .claude directory to catch changes in any subdirectory
                 // This will catch changes in both:
                 // - ~/.claude/projects/PROJECT-NAME/*.jsonl
-                // - ~/.config/claude/*.jsonl
                 pathToWatch = "\(realHome)/.claude"
-                
-                // If .claude doesn't exist, try .config/claude
-                if !FileManager.default.fileExists(atPath: pathToWatch!) {
-                    pathToWatch = "\(realHome)/.config/claude"
-                }
             } else {
                 pathToWatch = "\(NSHomeDirectory())/.claude"
             }

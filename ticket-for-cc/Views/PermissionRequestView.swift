@@ -24,7 +24,7 @@ struct PermissionRequestView: View {
             
             VStack(alignment: .leading, spacing: 10) {
                 Label("The app will read Claude usage data", systemImage: "doc.text")
-                Label("Located in ~/.claude/ or ~/.config/claude/", systemImage: "folder")
+                Label("Located in ~/.claude/ directory", systemImage: "folder")
                 Label("Read-only access", systemImage: "lock")
             }
             .font(.callout)
@@ -62,7 +62,7 @@ struct PermissionRequestView: View {
     private func showAccessDeniedAlert() {
         let alert = NSAlert()
         alert.messageText = "Access Denied"
-        alert.informativeText = "Without access to the Claude configuration folder, this app cannot monitor your usage. Please select the ~/.config/claude folder when prompted."
+        alert.informativeText = "Without access to the Claude configuration folder, this app cannot monitor your usage. Please select the ~/.claude folder when prompted."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
         alert.runModal()

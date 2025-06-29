@@ -78,7 +78,7 @@ class ClaudeUsageService: ObservableObject {
                 No Claude usage data found.
                 
                 Please use Claude Code to start a conversation first.
-                The app reads usage data from ~/.claude/ and ~/.config/claude/
+                The app reads usage data from ~/.claude/
                 
                 Make sure you have recent Claude Code sessions.
                 """
