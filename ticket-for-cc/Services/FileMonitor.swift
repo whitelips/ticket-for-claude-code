@@ -6,20 +6,47 @@ protocol FileMonitorDelegate: AnyObject {
 
 class FileMonitor {
     private var stream: FSEventStreamRef?
-    private let pathToWatch: String
+    private var pathToWatch: String?
     weak var delegate: FileMonitorDelegate?
     
     init() {
-        // Claude Code stores data in ~/.claude/projects/
-        let homeURL = FileManager.default.homeDirectoryForCurrentUser
-        let claudeProjectsPath = homeURL.appendingPathComponent(".claude/projects").path
-        
-        self.pathToWatch = claudeProjectsPath
-        print("FileMonitor watching: \(self.pathToWatch)")
+        updateWatchPath()
+    }
+    
+    private func updateWatchPath() {
+        // Try to get path from security-scoped bookmark first
+        if let bookmarkURL = SecurityBookmarkService.shared.getClaudeFolderURL() {
+            pathToWatch = bookmarkURL.path
+            print("FileMonitor using security-scoped path: \(bookmarkURL.path)")
+        } else {
+            // Fallback to attempting direct access (won't work in sandbox without permission)
+            if let realHome = Self.getRealHomeDirectory() {
+                // Watch the .claude directory to catch changes in any subdirectory
+                // This will catch changes in both:
+                // - ~/.claude/projects/PROJECT-NAME/*.jsonl
+                // - ~/.config/claude/*.jsonl
+                pathToWatch = "\(realHome)/.claude"
+                
+                // If .claude doesn't exist, try .config/claude
+                if !FileManager.default.fileExists(atPath: pathToWatch!) {
+                    pathToWatch = "\(realHome)/.config/claude"
+                }
+            } else {
+                pathToWatch = "\(NSHomeDirectory())/.claude"
+            }
+            print("FileMonitor attempting direct path (may fail due to sandbox): \(self.pathToWatch ?? "none")")
+        }
     }
     
     func startMonitoring() {
         guard stream == nil else { return }
+        
+        // Ensure we have a valid path to watch
+        updateWatchPath()
+        guard let watchPath = pathToWatch else {
+            print("FileMonitor: No valid path to watch")
+            return
+        }
         
         var context = FSEventStreamContext(
             version: 0,
@@ -45,7 +72,7 @@ class FileMonitor {
             }
         }
         
-        let pathsToWatch = [pathToWatch] as CFArray
+        let pathsToWatch = [watchPath] as CFArray
         
         stream = FSEventStreamCreate(
             kCFAllocatorDefault,
@@ -54,7 +81,11 @@ class FileMonitor {
             pathsToWatch,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             1.0, // latency in seconds
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents)
+            FSEventStreamCreateFlags(
+                kFSEventStreamCreateFlagFileEvents |
+                kFSEventStreamCreateFlagWatchRoot |
+                kFSEventStreamCreateFlagUseCFTypes
+            )
         )
         
         if let stream = stream {
@@ -75,4 +106,22 @@ class FileMonitor {
     deinit {
         stopMonitoring()
     }
+}
+
+extension FileMonitor {
+    
+    static func getRealHomeDirectory() -> String? {
+        let pw = getpwuid(getuid())
+        if let homeDir = pw?.pointee.pw_dir {
+            return String(cString: homeDir)
+        }
+        return nil
+    }
+
+    // 또는 더 간단한 방법
+    static func getRealHomePath() -> String {
+        return String(cString: getpwuid(getuid()).pointee.pw_dir)
+    }
+    
+    
 }

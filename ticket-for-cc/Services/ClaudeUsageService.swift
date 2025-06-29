@@ -34,57 +34,64 @@ class ClaudeUsageService: ObservableObject {
     }
     
     private func loadData() {
-        DispatchQueue.global(qos: .background).async { [weak self] in
-            do {
-                var allEntries: [UsageEntry] = []
-                let jsonlFiles = DataParser.getAllJSONLFiles()
-                
-                for fileURL in jsonlFiles {
-                    let entries = try DataParser.parseJSONLFile(at: fileURL)
-                    allEntries.append(contentsOf: entries)
-                }
-                
-                // Sort all entries by timestamp
-                allEntries.sort { $0.timestamp < $1.timestamp }
-                
-                DispatchQueue.main.async {
-                    if allEntries.isEmpty && jsonlFiles.isEmpty {
-                        self?.errorMessage = """
-                        No Claude usage data found.
-                        
-                        Please use Claude Code to start a conversation first.
-                        The app reads usage data from ~/.claude/projects/
-                        
-                        Make sure you have recent Claude Code sessions.
-                        """
-                    } else if allEntries.isEmpty && !jsonlFiles.isEmpty {
-                        self?.errorMessage = """
-                        Found \(jsonlFiles.count) JSONL files but no valid usage data.
-                        
-                        This might be because:
-                        • No recent assistant responses with usage data
-                        • Data format has changed
-                        • All entries are from user messages only
-                        
-                        Try having a conversation with Claude Code first.
-                        """
-                    } else {
-                        print("📊 Loaded \(allEntries.count) usage entries from \(jsonlFiles.count) files")
-                        if let mostRecent = allEntries.last {
-                            print("📅 Most recent entry: \(mostRecent.timestamp)")
-                        }
-                        self?.updateSession(with: allEntries)
-                        self?.analytics.analyzeUsageData(allEntries)
-                        self?.errorMessage = nil
-                    }
-                    self?.isLoading = false
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.errorMessage = "Failed to load usage data: \(error.localizedDescription)"
-                    self?.isLoading = false
-                }
+        isLoading = true
+        
+        Task {
+            await loadDataAsync()
+        }
+    }
+    
+    private func loadDataAsync() async {
+        // Get all JSONL files using DataParser
+        let jsonlFiles = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let files = DataParser.getAllJSONLFiles()
+                continuation.resume(returning: files)
             }
+        }
+        
+        // Parse all files to get usage entries
+        var allEntries: [UsageEntry] = []
+        for file in jsonlFiles {
+            do {
+                let entries = try DataParser.parseJSONLFile(at: file)
+                allEntries.append(contentsOf: entries)
+            } catch {
+                print("Failed to parse file \(file.lastPathComponent): \(error)")
+                // Continue with other files even if one fails
+            }
+        }
+        
+        // Sort entries by timestamp
+        allEntries.sort { $0.timestamp < $1.timestamp }
+        
+        // Create local copies for use in MainActor block
+        let entriesCount = allEntries.count
+        let filesCount = jsonlFiles.count
+        let mostRecentTimestamp = allEntries.last?.timestamp
+        
+        await MainActor.run { [weak self] in
+            guard let self = self else { return }
+            
+            if allEntries.isEmpty {
+                self.errorMessage = """
+                No Claude usage data found.
+                
+                Please use Claude Code to start a conversation first.
+                The app reads usage data from ~/.claude/ and ~/.config/claude/
+                
+                Make sure you have recent Claude Code sessions.
+                """
+            } else {
+                print("📊 Loaded \(entriesCount) usage entries from \(filesCount) files")
+                if let timestamp = mostRecentTimestamp {
+                    print("📅 Most recent entry: \(timestamp)")
+                }
+                self.updateSession(with: allEntries)
+                self.analytics.analyzeUsageData(allEntries)
+                self.errorMessage = nil
+            }
+            self.isLoading = false
         }
     }
     
@@ -181,6 +188,13 @@ class ClaudeUsageService: ObservableObject {
 
 extension ClaudeUsageService: FileMonitorDelegate {
     func fileMonitorDidDetectChange() {
+        loadData()
+    }
+}
+
+extension ClaudeUsageService {
+    // Public method for manual refresh (e.g., from retry button)
+    func refreshData() {
         loadData()
     }
 }

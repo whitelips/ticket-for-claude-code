@@ -13,27 +13,46 @@ struct ContentView: View {
     @State private var selectedTab = 0
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            OverviewView(dataService: dataService)
-                .tabItem {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                    Text("Overview")
-                }
-                .tag(0)
-            
-            AnalyticsView(dataService: dataService)
-                .tabItem {
-                    Image(systemName: "chart.bar.fill")
-                    Text("Analytics")
-                }
-                .tag(1)
+        PermissionCheckView {
+            TabView(selection: $selectedTab) {
+                OverviewView(dataService: dataService)
+                    .tabItem {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                        Text("Overview")
+                    }
+                    .tag(0)
+                
+                AnalyticsView(dataService: dataService)
+                    .tabItem {
+                        Image(systemName: "chart.bar.fill")
+                        Text("Analytics")
+                    }
+                    .tag(1)
+            }
+            .frame(width: 800, height: 700)
         }
-        .frame(width: 800, height: 700)
     }
 }
 
 struct OverviewView: View {
     @ObservedObject var dataService: ClaudeUsageService
+    
+    // Computed properties to reduce recomputation
+    private var todayCostFormatted: String {
+        String(format: "$%.2f", dataService.todayTotalCost)
+    }
+    
+    private var totalTokensFormatted: String {
+        dataService.currentSession.totalTokens.formatted()
+    }
+    
+    private var sessionCountFormatted: String {
+        "\(dataService.analytics.sessionBlocks.count)"
+    }
+    
+    private var burnRateFormatted: String {
+        String(format: "%.0f/hr", dataService.currentSession.tokensPerHour)
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -69,31 +88,35 @@ struct OverviewView: View {
             HStack(spacing: 16) {
                 UsageCard(
                     title: "Today's Cost",
-                    value: String(format: "$%.2f", dataService.todayTotalCost),
+                    value: todayCostFormatted,
                     icon: "dollarsign.circle",
                     color: .green
                 )
+                .id("cost-card")
                 
                 UsageCard(
                     title: "Total Tokens",
-                    value: dataService.currentSession.totalTokens.formatted(),
+                    value: totalTokensFormatted,
                     icon: "sum",
                     color: .blue
                 )
+                .id("tokens-card")
                 
                 UsageCard(
                     title: "Active Sessions",
-                    value: "\(dataService.analytics.sessionBlocks.count)",
+                    value: sessionCountFormatted,
                     icon: "bubble.left.and.bubble.right",
                     color: .orange
                 )
+                .id("sessions-card")
                 
                 UsageCard(
                     title: "Burn Rate",
-                    value: String(format: "%.0f/hr", dataService.currentSession.tokensPerHour),
+                    value: burnRateFormatted,
                     icon: "flame",
                     color: .purple
                 )
+                .id("burnrate-card")
             }
             .padding(.horizontal)
             
@@ -113,6 +136,7 @@ struct OverviewView: View {
                     ProgressView(value: dataService.dailyCostPercentage)
                         .progressViewStyle(LinearProgressViewStyle(tint: progressColor(for: dataService.dailyCostPercentage)))
                         .scaleEffect(y: 2)
+                        .animation(.easeInOut(duration: 0.5), value: dataService.dailyCostPercentage)
                     
                     HStack {
                         Text("$\(dataService.todayTotalCost, specifier: "%.2f")")
@@ -139,6 +163,7 @@ struct OverviewView: View {
                     ProgressView(value: dataService.monthlyCostPercentage)
                         .progressViewStyle(LinearProgressViewStyle(tint: progressColor(for: dataService.monthlyCostPercentage)))
                         .scaleEffect(y: 2)
+                        .animation(.easeInOut(duration: 0.5), value: dataService.monthlyCostPercentage)
                     
                     HStack {
                         Text("$\(dataService.monthTotalCost, specifier: "%.2f")")
@@ -193,19 +218,29 @@ struct OverviewView: View {
             Spacer()
             
             // Error or Loading State
-            if let dataService = dataService as? ClaudeUsageService {
-                if dataService.isLoading {
-                    ProgressView("Loading usage data...")
-                        .padding()
-                } else if let error = dataService.errorMessage {
+            if dataService.isLoading {
+                ProgressView("Loading usage data...")
+                    .padding()
+                    .transition(.opacity)
+            } else if let error = dataService.errorMessage {
+                VStack(spacing: 10) {
                     Text(error)
                         .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
                         .padding()
+                    
+                    Button("Retry") {
+                        dataService.refreshData()
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
+                .transition(.opacity)
             }
         }
         .frame(width: 600, height: 700)
         .padding(.vertical)
+        .animation(.easeInOut(duration: 0.2), value: dataService.isLoading)
+        .animation(.easeInOut(duration: 0.2), value: dataService.errorMessage)
     }
     
     private func progressColor(for percentage: Double) -> Color {
@@ -239,11 +274,22 @@ struct UsageCard: View {
             Text(value)
                 .font(.title2)
                 .fontWeight(.semibold)
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.3), value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(8)
+    }
+}
+
+extension UsageCard: Equatable {
+    static func == (lhs: UsageCard, rhs: UsageCard) -> Bool {
+        lhs.title == rhs.title &&
+        lhs.value == rhs.value &&
+        lhs.icon == rhs.icon &&
+        lhs.color == rhs.color
     }
 }
 

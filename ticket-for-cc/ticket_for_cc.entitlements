@@ -10,9 +10,5 @@
 	<false/>
 	<key>com.apple.security.files.downloads.read-only</key>
 	<false/>
-	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
-	<array>
-		<string>/.claude/</string>
-	</array>
 </dict>
 </plist>
