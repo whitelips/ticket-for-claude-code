@@ -1,53 +1,21 @@
+//
+//  DataParser.swift
+//  ticket-for-cc
+//
+//  Service for parsing JSONL files containing Claude usage data
+//
+
 import Foundation
-
-// Real Claude Code data structures for ~/.claude/projects/**/*.jsonl files
-struct ClaudeMessage: Codable {
-    let id: String?
-    let role: String
-    let model: String?
-    let usage: ClaudeUsage?
-}
-
-struct ClaudeUsage: Codable {
-    let inputTokens: Int
-    let outputTokens: Int
-    let cacheCreationInputTokens: Int?
-    let cacheReadInputTokens: Int?
-    
-    enum CodingKeys: String, CodingKey {
-        case inputTokens = "input_tokens"
-        case outputTokens = "output_tokens"
-        case cacheCreationInputTokens = "cache_creation_input_tokens"
-        case cacheReadInputTokens = "cache_read_input_tokens"
-    }
-}
-
-struct ClaudeLogEntry: Codable {
-    let timestamp: String
-    let sessionId: String
-    let type: String
-    let message: ClaudeMessage?
-    let uuid: String?
-    let parentUuid: String?
-    let version: String?
-    let cwd: String?
-    let requestId: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case timestamp
-        case sessionId
-        case type
-        case message
-        case uuid
-        case parentUuid
-        case version
-        case cwd
-        case requestId
-    }
-}
+import os.log
 
 class DataParser {
-    static func parseJSONLFile(at url: URL) throws -> [UsageEntry] {
+    private let logger = Logger(subsystem: "com.ticket-for-cc", category: "DataParser")
+    
+    /// Set to track processed entries for deduplication
+    private var processedEntries = Set<String>()
+    
+    /// Parse a JSONL file matching ccusage format
+    func parseJSONLFile(at url: URL) throws -> [UsageEntry] {
         // Ensure we have access to security-scoped resource if needed
         let shouldStopAccessing = url.startAccessingSecurityScopedResource()
         defer {
@@ -57,178 +25,263 @@ class DataParser {
         }
         
         let content = try String(contentsOf: url, encoding: .utf8)
-        let lines = content.components(separatedBy: .newlines)
-            .filter { !$0.isEmpty }
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
         
         var entries: [UsageEntry] = []
-        let decoder = JSONDecoder()
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         
-        // Parse current ~/.claude/projects/**/*.jsonl format
-        for line in lines {
-            guard let data = line.data(using: .utf8) else { continue }
-            
+        for (index, line) in lines.enumerated() {
             do {
-                let logEntry = try decoder.decode(ClaudeLogEntry.self, from: data)
+                let entry = try UsageEntry.parse(from: String(line))
                 
-                // Only process assistant messages with usage data
-                guard logEntry.type == "assistant",
-                      let message = logEntry.message,
-                      let usage = message.usage,
-                      let model = message.model,
-                      let uuid = logEntry.uuid else { continue }
-                
-                // Parse timestamp
-                guard let date = dateFormatter.date(from: logEntry.timestamp) else { continue }
-                
-                let usageEntry = UsageEntry(
-                    timestamp: date,
-                    model: model,
-                    inputTokens: usage.inputTokens,
-                    outputTokens: usage.outputTokens,
-                    sessionId: logEntry.sessionId,
-                    requestId: logEntry.requestId,
-                    messageId: message.id,
-                    cacheCreationInputTokens: usage.cacheCreationInputTokens,
-                    cacheReadInputTokens: usage.cacheReadInputTokens,
-                    uuid: uuid,
-                    parentUuid: logEntry.parentUuid,
-                    version: logEntry.version,
-                    cwd: logEntry.cwd
-                )
-                
-                entries.append(usageEntry)
+                // Skip if we've already processed this entry (deduplication)
+                if !processedEntries.contains(entry.id) {
+                    processedEntries.insert(entry.id)
+                    // Only include entries that have usage data (skip conversation messages, etc.)
+                    if entry.hasUsageData {
+                        entries.append(entry)
+                    } else {
+                        logger.debug("Skipping entry without usage data at line \(index + 1) in \(url.lastPathComponent)")
+                    }
+                }
             } catch {
-                // Skip malformed entries (normal for user messages and other entry types)
-                continue
+                // Log error but continue processing other lines
+                logger.debug("Failed to parse line \(index + 1) in \(url.lastPathComponent): \(error)")
             }
         }
         
-        print("📊 Parsed \(entries.count) usage entries from \(url.lastPathComponent)")
-        
-        // Add summary of total tokens parsed
-        let totalInputTokens = entries.reduce(0) { $0 + $1.effectiveInputTokens }
-        let totalOutputTokens = entries.reduce(0) { $0 + $1.outputTokens }
-        print("  Total tokens: \(totalInputTokens) input, \(totalOutputTokens) output")
+        logger.info("📊 Parsed \(entries.count) usage entries from \(url.lastPathComponent)")
         
         return entries.sorted { $0.timestamp < $1.timestamp }
     }
     
-    static func getAllJSONLFiles() -> [URL] {
-        let fileManager = FileManager.default
+    /// Get Claude data directories to search (supports both ~/.config/claude and ~/.claude)
+    func getClaudePaths() -> [String] {
+        var paths: [String] = []
         
-        // First try to use security-scoped bookmark URL for ~/.claude/projects
-        if var securityScopedURL = SecurityBookmarkService.shared.getClaudeFolderURL() {
-            // Ensure we're pointing to the projects subdirectory
-            if !securityScopedURL.path().contains(".claude/projects") {
-                securityScopedURL.append(path: ".claude/projects")
+        // First try to use security-scoped bookmark URLs
+        if let securityScopedURL = SecurityBookmarkService.shared.getClaudeFolderURL() {
+            let claudePaths = findClaudeDirectoriesInSecurityScope(securityScopedURL)
+            paths.append(contentsOf: claudePaths)
+        }
+        
+        // Get real user home directory (not sandboxed)
+        let homeDir = getRealHomeDirectory()
+        
+        // Check both new and old default paths
+        let defaultPaths = [
+            "\(homeDir)/.config/claude",  // New default (XDG)
+            "\(homeDir)/.claude"          // Old default
+        ]
+        
+        for path in defaultPaths {
+            let projectsPath = URL(fileURLWithPath: path).appendingPathComponent("projects")
+            if FileManager.default.fileExists(atPath: projectsPath.path) {
+                paths.append(path)
             }
-            print("Using security-scoped URL: \(securityScopedURL.path())")
-            // Scan for JSONL files in the projects directory structure
-            return scanProjectsDirectoryForJSONLFiles(at: securityScopedURL)
         }
         
-        // Fallback to direct access (won't work in sandbox without permission)
-        // Get real home directory instead of sandboxed container path
-        guard let realHome = getRealHomeDirectory() else {
-            print("❌ Could not get real home directory")
-            return []
-        }
-        
-        // Look for ~/.claude/projects directory structure
-        let projectsPath = URL(fileURLWithPath: "\(realHome)/.claude/projects")
-        
-        guard fileManager.fileExists(atPath: projectsPath.path) else {
-            print("❌ Claude projects directory not found at: \(projectsPath.path)")
-            print("🏠 Home directory resolved to: \(fileManager.homeDirectoryForCurrentUser.path)")
-            return []
-        }
-        
-        print("Found Claude projects directory at: \(projectsPath.path)")
-        
-        var allJSONLFiles: [URL] = []
-        
-        do {
-            // Get all project directories in ~/.claude/projects/
-            let projectDirs = try fileManager.contentsOfDirectory(
-                at: projectsPath,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: .skipsHiddenFiles
-            ).filter { url in
-                (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        // Remove duplicates while preserving order
+        var uniquePaths: [String] = []
+        var seen = Set<String>()
+        for path in paths {
+            let normalized = URL(fileURLWithPath: path).standardized.path
+            if !seen.contains(normalized) {
+                seen.insert(normalized)
+                uniquePaths.append(path)
             }
-            
-            // Get all JSONL files from each project directory
-            print("Found \(projectDirs.count) project directories")
-            for projectDir in projectDirs {
-                do {
-                    let jsonlFiles = try fileManager.contentsOfDirectory(
-                        at: projectDir,
-                        includingPropertiesForKeys: nil,
-                        options: .skipsHiddenFiles
-                    ).filter { $0.pathExtension == "jsonl" }
-                    
-                    if !jsonlFiles.isEmpty {
-                        print("  Project: \(projectDir.lastPathComponent) - \(jsonlFiles.count) JSONL files")
-                    }
-                    
-                    allJSONLFiles.append(contentsOf: jsonlFiles)
-                } catch {
-                    print("Failed to list files in \(projectDir.path): \(error)")
-                }
-            }
-            
-            print("Found \(allJSONLFiles.count) total JSONL files")
-            return allJSONLFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
-            
-        } catch {
-            print("Failed to list directories: \(error)")
-            return []
         }
+        
+        return uniquePaths
     }
     
-    // Helper method to scan ~/.claude/projects directory for JSONL files
-    private static func scanProjectsDirectoryForJSONLFiles(at projectsURL: URL) -> [URL] {
+    /// Get all JSONL files from Claude directories
+    func getAllJSONLFiles() -> [URL] {
+        let paths = getClaudePaths()
+        var allJSONLFiles: [URL] = []
+        
+        for path in paths {
+            let projectsURL = URL(fileURLWithPath: path).appendingPathComponent("projects")
+            let files = scanProjectsDirectoryForJSONLFiles(at: projectsURL)
+            allJSONLFiles.append(contentsOf: files)
+        }
+        
+        // Remove duplicates based on file path
+        var uniqueFiles: [URL] = []
+        var seen = Set<String>()
+        for file in allJSONLFiles {
+            let normalized = file.standardized.path
+            if !seen.contains(normalized) {
+                seen.insert(normalized)
+                uniqueFiles.append(file)
+            }
+        }
+        
+        return uniqueFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+    
+    /// Get session ID and project path from file URL
+    /// Format: ~/.config/claude/projects/{project}/{session}/{file}.jsonl
+    func extractSessionInfo(from url: URL) -> (sessionId: String, projectPath: String)? {
+        let pathComponents = url.pathComponents
+        
+        // Find the index of "projects" directory
+        guard let projectsIndex = pathComponents.firstIndex(of: "projects"),
+              projectsIndex + 2 < pathComponents.count else {
+            return nil
+        }
+        
+        let projectName = pathComponents[projectsIndex + 1]
+        let sessionId = pathComponents[projectsIndex + 2]
+        
+        return (sessionId: sessionId, projectPath: projectName)
+    }
+    
+    /// Load all usage data from Claude directories
+    func loadAllUsageData(from paths: [String]) async throws -> [UsageEntry] {
+        var allEntries: [UsageEntry] = []
+        
+        for path in paths {
+            let projectsPath = URL(fileURLWithPath: path).appendingPathComponent("projects")
+            
+            guard FileManager.default.fileExists(atPath: projectsPath.path) else {
+                logger.debug("Projects directory not found at: \(projectsPath.path)")
+                continue
+            }
+            
+            let files = scanProjectsDirectoryForJSONLFiles(at: projectsPath)
+            
+            for file in files {
+                do {
+                    let entries = try parseJSONLFile(at: file)
+                    allEntries.append(contentsOf: entries)
+                } catch {
+                    logger.error("Failed to parse file \(file.lastPathComponent): \(error)")
+                }
+            }
+        }
+        
+        // Sort by timestamp
+        return allEntries.sorted { $0.timestamp < $1.timestamp }
+    }
+    
+    /// Reset processed entries set (useful for refreshing data)
+    func resetDeduplication() {
+        processedEntries.removeAll()
+    }
+    
+    /// Get the real user home directory (not sandboxed container)
+    private func getRealHomeDirectory() -> String {
+        // First try NSHomeDirectory() which should return real home even in sandbox
+        let nsHomeDir = NSHomeDirectory()
+        if !nsHomeDir.contains("Containers") {
+            return nsHomeDir
+        }
+        
+        // Fallback: Use environment variable
+        if let homeFromEnv = ProcessInfo.processInfo.environment["HOME"] {
+            return homeFromEnv
+        }
+        
+        // Last resort: Try to extract from current path by looking for /Users/username pattern
+        let currentPath = nsHomeDir
+        if let range = currentPath.range(of: "/Users/[^/]+", options: .regularExpression) {
+            return String(currentPath[range])
+        }
+        
+        // Absolute fallback
+        return nsHomeDir
+    }
+    
+    /// Find Claude directories within a security-scoped URL
+    private func findClaudeDirectoriesInSecurityScope(_ securityScopedURL: URL) -> [String] {
+        var claudePaths: [String] = []
+        
+        logger.info("🔍 Searching for Claude directories in security-scoped URL: \(securityScopedURL.path)")
+        
+        // Start accessing security-scoped resource
+        let shouldStopAccessing = securityScopedURL.startAccessingSecurityScopedResource()
+        defer {
+            if shouldStopAccessing {
+                securityScopedURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        let fileManager = FileManager.default
+        let urlName = securityScopedURL.lastPathComponent
+        
+        // Case 1: The selected URL itself is a Claude directory
+        if urlName == ".claude" || urlName == "claude" {
+            let projectsPath = securityScopedURL.appendingPathComponent("projects")
+            if fileManager.fileExists(atPath: projectsPath.path) {
+                logger.info("✅ Security-scoped URL is Claude directory: \(securityScopedURL.path)")
+                claudePaths.append(securityScopedURL.path)
+                return claudePaths
+            }
+        }
+        
+        // Case 2: Search for Claude directories within the selected folder
+        let candidateSubpaths = [
+            ".claude",
+            ".config/claude", 
+            "claude",
+            ".local/share/claude",
+            "Library/Application Support/claude"
+        ]
+        
+        for subpath in candidateSubpaths {
+            let claudeURL = securityScopedURL.appendingPathComponent(subpath)
+            let projectsURL = claudeURL.appendingPathComponent("projects")
+            
+            if fileManager.fileExists(atPath: projectsURL.path) {
+                logger.info("✅ Found Claude directory in security scope: \(claudeURL.path)")
+                claudePaths.append(claudeURL.path)
+            }
+        }
+        
+        if claudePaths.isEmpty {
+            logger.warning("⚠️ No Claude directories found in security-scoped URL: \(securityScopedURL.path)")
+        }
+        
+        return claudePaths
+    }
+    
+    // Helper method to scan projects directory for JSONL files
+    private func scanProjectsDirectoryForJSONLFiles(at projectsURL: URL) -> [URL] {
         let fileManager = FileManager.default
         var allJSONLFiles: [URL] = []
         
-        print("Scanning for JSONL files in: \(projectsURL.path)")
+        logger.info("Scanning for JSONL files in: \(projectsURL.path)")
+        
+        // Start accessing security-scoped resource if needed
+        let shouldStopAccessing = projectsURL.startAccessingSecurityScopedResource()
+        defer {
+            if shouldStopAccessing {
+                projectsURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        guard FileManager.default.fileExists(atPath: projectsURL.path) else {
+            logger.debug("Projects directory not found at: \(projectsURL.path)")
+            return []
+        }
         
         do {
-            // Get all project directories
-            let projectDirs = try fileManager.contentsOfDirectory(
+            // Use enumerator for recursive search
+            let enumerator = fileManager.enumerator(
                 at: projectsURL,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: .skipsHiddenFiles
-            ).filter { url in
-                (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-            }
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
             
-            print("Found \(projectDirs.count) project directories")
-            
-            // Get JSONL files from each project directory
-            for projectDir in projectDirs {
-                do {
-                    let jsonlFiles = try fileManager.contentsOfDirectory(
-                        at: projectDir,
-                        includingPropertiesForKeys: nil,
-                        options: .skipsHiddenFiles
-                    ).filter { $0.pathExtension == "jsonl" }
-                    
-                    if !jsonlFiles.isEmpty {
-                        print("  Project: \(projectDir.lastPathComponent) - \(jsonlFiles.count) JSONL files")
-                    }
-                    
-                    allJSONLFiles.append(contentsOf: jsonlFiles)
-                } catch {
-                    print("Failed to list files in \(projectDir.path): \(error)")
+            while let url = enumerator?.nextObject() as? URL {
+                if url.pathExtension == "jsonl" {
+                    allJSONLFiles.append(url)
                 }
             }
             
-            print("Found \(allJSONLFiles.count) total JSONL files")
+            logger.info("Found \(allJSONLFiles.count) total JSONL files")
         } catch {
-            print("Failed to scan projects directory: \(error)")
+            logger.error("Failed to scan projects directory: \(error)")
         }
         
         return allJSONLFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }

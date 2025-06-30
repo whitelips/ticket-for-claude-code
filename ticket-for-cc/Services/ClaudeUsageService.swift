@@ -14,6 +14,12 @@ class ClaudeUsageService: ObservableObject {
     private let fileMonitor = FileMonitor()
     private var refreshTimer: Timer?
     private var allEntries: [UsageEntry] = []
+    private var hasLoadedInitialData = false
+    
+    // Computed property for active session block
+    var activeSessionBlock: SessionBlock? {
+        analytics.sessionBlocks.first { $0.isActive }
+    }
     
     init() {
         self.currentSession = Session(startTime: Date())
@@ -34,7 +40,10 @@ class ClaudeUsageService: ObservableObject {
     }
     
     private func loadData() {
-        isLoading = true
+        // Only show loading indicator for initial load, not periodic refreshes
+        if !hasLoadedInitialData {
+            isLoading = true
+        }
         
         Task {
             await loadDataAsync()
@@ -42,56 +51,53 @@ class ClaudeUsageService: ObservableObject {
     }
     
     private func loadDataAsync() async {
-        // Get all JSONL files using DataParser
-        let jsonlFiles = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let files = DataParser.getAllJSONLFiles()
-                continuation.resume(returning: files)
-            }
-        }
-        
-        // Parse all files to get usage entries
-        var allEntries: [UsageEntry] = []
-        for file in jsonlFiles {
-            do {
-                let entries = try DataParser.parseJSONLFile(at: file)
-                allEntries.append(contentsOf: entries)
-            } catch {
-                print("Failed to parse file \(file.lastPathComponent): \(error)")
-                // Continue with other files even if one fails
-            }
-        }
-        
-        // Sort entries by timestamp
-        allEntries.sort { $0.timestamp < $1.timestamp }
-        
-        // Create local copies for use in MainActor block
-        let entriesCount = allEntries.count
-        let filesCount = jsonlFiles.count
-        let mostRecentTimestamp = allEntries.last?.timestamp
-        
-        await MainActor.run { [weak self] in
-            guard let self = self else { return }
+        do {
+            // Create DataParser instance
+            let parser = DataParser()
             
-            if allEntries.isEmpty {
-                self.errorMessage = """
-                No Claude usage data found.
+            // Get Claude paths and load all usage data
+            let paths = parser.getClaudePaths()
+            var allEntries = try await parser.loadAllUsageData(from: paths)
+            
+            // Sort entries by timestamp
+            allEntries.sort { $0.timestamp < $1.timestamp }
+            
+            // Create local copies for use in MainActor block
+            let entriesCount = allEntries.count
+            let pathsCount = paths.count
+            let mostRecentTimestamp = allEntries.last?.timestamp
+        
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
                 
-                Please use Claude Code to start a conversation first.
-                The app reads usage data from ~/.claude/
-                
-                Make sure you have recent Claude Code sessions.
-                """
-            } else {
-                print("📊 Loaded \(entriesCount) usage entries from \(filesCount) files")
-                if let timestamp = mostRecentTimestamp {
-                    print("📅 Most recent entry: \(timestamp)")
+                if allEntries.isEmpty {
+                    self.errorMessage = """
+                    No Claude usage data found.
+                    
+                    Please use Claude Code to start a conversation first.
+                    The app reads usage data from ~/.config/claude/ or ~/.claude/
+                    
+                    Make sure you have recent Claude Code sessions.
+                    """
+                } else {
+                    print("📊 Loaded \(entriesCount) usage entries from \(pathsCount) paths")
+                    if let timestamp = mostRecentTimestamp {
+                        print("📅 Most recent entry: \(timestamp)")
+                    }
+                    self.updateSession(with: allEntries)
+                    self.analytics.analyzeUsageData(allEntries)
+                    self.errorMessage = nil
                 }
-                self.updateSession(with: allEntries)
-                self.analytics.analyzeUsageData(allEntries)
-                self.errorMessage = nil
+                self.isLoading = false
+                self.hasLoadedInitialData = true
             }
-            self.isLoading = false
+        } catch {
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                self.errorMessage = "Failed to load usage data: \(error.localizedDescription)"
+                self.isLoading = false
+                self.hasLoadedInitialData = true
+            }
         }
     }
     
@@ -195,6 +201,7 @@ extension ClaudeUsageService: FileMonitorDelegate {
 extension ClaudeUsageService {
     // Public method for manual refresh (e.g., from retry button)
     func refreshData() {
+        isLoading = true
         loadData()
     }
 }

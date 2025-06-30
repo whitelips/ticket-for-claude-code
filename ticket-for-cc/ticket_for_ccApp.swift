@@ -2,31 +2,47 @@
 //  ticket_for_ccApp.swift
 //  ticket-for-cc
 //
-//  Created by 임민호 on 6/22/25.
+//  Ticket for Claude Code - macOS menu bar app for monitoring Claude usage
 //
 
 import SwiftUI
-import SwiftData
+import AppKit
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    var menuBarController: MenuBarController?
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Configure app to run as menu bar app
+        NSApp.setActivationPolicy(.accessory)
+        
+        // Initialize menu bar controller
+        menuBarController = MenuBarController()
+        menuBarController?.startMonitoring()
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        // Clean up
+        menuBarController = nil
+    }
+}
 
 @main
 struct ticket_for_ccApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        // Main dashboard window (hidden by default for menu bar app)
+        WindowGroup("Dashboard") {
+            DashboardView()
+                .frame(minWidth: 1000, minHeight: 700)
         }
-        .modelContainer(sharedModelContainer)
+        .handlesExternalEvents(matching: Set(arrayLiteral: "dashboard"))
+        .defaultSize(width: 1200, height: 800)
+        
+        // Settings window
+        Settings {
+            SettingsView()
+                .frame(width: 400, height: 300)
+        }
     }
 }

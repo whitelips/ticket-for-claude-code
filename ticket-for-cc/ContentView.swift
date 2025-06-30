@@ -9,28 +9,8 @@ import SwiftUI
 import Charts
 
 struct ContentView: View {
-    @StateObject private var dataService = ClaudeUsageService()
-    @State private var selectedTab = 0
-    
     var body: some View {
-        PermissionCheckView {
-            TabView(selection: $selectedTab) {
-                OverviewView(dataService: dataService)
-                    .tabItem {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                        Text("Overview")
-                    }
-                    .tag(0)
-                
-                AnalyticsView(dataService: dataService)
-                    .tabItem {
-                        Image(systemName: "chart.bar.fill")
-                        Text("Analytics")
-                    }
-                    .tag(1)
-            }
-            .frame(width: 900, height: 750)
-        }
+        DashboardView()
     }
 }
 

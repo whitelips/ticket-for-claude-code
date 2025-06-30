@@ -70,32 +70,4 @@ struct ModelUsage {
     }
 }
 
-struct SessionBlock: Identifiable {
-    let id = UUID()
-    let sessionId: String
-    let startTime: Date
-    var entries: [UsageEntry] = []
-    
-    var endTime: Date { entries.last?.timestamp ?? startTime }
-    var duration: TimeInterval { endTime.timeIntervalSince(startTime) }
-    var totalInputTokens: Int { entries.reduce(0) { $0 + $1.inputTokens } }
-    var totalOutputTokens: Int { entries.reduce(0) { $0 + $1.outputTokens } }
-    var totalTokens: Int { totalInputTokens + totalOutputTokens }
-    var totalCost: Double {
-        entries.reduce(0.0) { total, entry in
-            total + ModelPricingData.calculateCost(
-                inputTokens: entry.inputTokens,
-                outputTokens: entry.outputTokens,
-                model: entry.model
-            )
-        }
-    }
-    
-    // ccusage-style 5-hour billing blocks
-    var billingBlockStart: Date {
-        let calendar = Calendar.current
-        let hour = calendar.component(.hour, from: startTime)
-        let blockHour = (hour / 5) * 5 // Round down to nearest 5-hour block
-        return calendar.date(bySettingHour: blockHour, minute: 0, second: 0, of: startTime) ?? startTime
-    }
-}
+// SessionBlock is now defined in Models/SessionBlock.swift

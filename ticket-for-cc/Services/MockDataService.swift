@@ -23,8 +23,8 @@ class MockDataService: ObservableObject {
     }
     
     private func generateMockEntry() {
-        let models = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"]
-        let entry = UsageEntry(
+        let models = ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-20250514"]
+        let entry = UsageEntry.mock(
             timestamp: Date(),
             model: models.randomElement()!,
             inputTokens: Int.random(in: 100...5000),

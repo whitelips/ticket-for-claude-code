@@ -56,19 +56,8 @@ class UsageAnalyticsService: ObservableObject {
     }
     
     private func groupBySessions(_ entries: [UsageEntry]) {
-        let grouped = Dictionary(grouping: entries) { $0.sessionId }
-        
-        sessionBlocks = grouped.compactMap { sessionId, entries in
-            guard !entries.isEmpty else { return nil }
-            let sortedEntries = entries.sorted { $0.timestamp < $1.timestamp }
-            
-            var sessionBlock = SessionBlock(
-                sessionId: sessionId,
-                startTime: sortedEntries.first!.timestamp
-            )
-            sessionBlock.entries = sortedEntries
-            return sessionBlock
-        }.sorted { $0.startTime < $1.startTime }
+        // Use the new SessionBlockManager to create 5-hour blocks
+        sessionBlocks = SessionBlockManager.identifySessionBlocks(from: entries)
     }
     
     private func calculateModelBreakdown(_ entries: [UsageEntry]) {
