@@ -11,7 +11,7 @@ import Charts
 struct BurnRateChartView: View {
     let blocks: [SessionBlock]
     @State private var selectedMetric: ChartMetric = .tokens
-    @State private var selectedTimeRange: ChartTimeRange = .lastWeek
+    @State private var selectedTimeRange: ChartTimeRange = .last4Hours
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -24,7 +24,7 @@ struct BurnRateChartView: View {
                 Spacer()
                 
                 // Metric selector
-                Picker("Metric", selection: $selectedMetric) {
+                Picker(selection: $selectedMetric, label: EmptyView()) {
                     ForEach(ChartMetric.allCases, id: \.self) { metric in
                         Text(metric.displayName).tag(metric)
                     }
@@ -32,14 +32,18 @@ struct BurnRateChartView: View {
                 .pickerStyle(SegmentedPickerStyle())
                 .frame(width: 200)
                 
-                // Time range selector
-                Picker("Time Range", selection: $selectedTimeRange) {
+                // Time range selector  
+                Text("Time Range")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Picker(selection: $selectedTimeRange, label: EmptyView()) {
                     ForEach(ChartTimeRange.allCases, id: \.self) { range in
                         Text(range.displayName).tag(range)
                     }
                 }
                 .pickerStyle(MenuPickerStyle())
-                .frame(width: 120)
+                .frame(width: 80)
             }
             
             // Chart
@@ -73,6 +77,13 @@ struct BurnRateChartView: View {
                             .foregroundStyle(.blue)
                             .interpolationMethod(.catmullRom)
                             
+                            PointMark(
+                                x: .value("Time", dataPoint.timestamp),
+                                y: .value("Tokens", dataPoint.tokens)
+                            )
+                            .foregroundStyle(.blue)
+                            .symbolSize(60)
+                            
                             AreaMark(
                                 x: .value("Time", dataPoint.timestamp),
                                 y: .value("Tokens", dataPoint.tokens)
@@ -87,6 +98,13 @@ struct BurnRateChartView: View {
                             )
                             .foregroundStyle(.green)
                             .interpolationMethod(.catmullRom)
+                            
+                            PointMark(
+                                x: .value("Time", dataPoint.timestamp),
+                                y: .value("Cost", dataPoint.cost)
+                            )
+                            .foregroundStyle(.green)
+                            .symbolSize(60)
                             
                             AreaMark(
                                 x: .value("Time", dataPoint.timestamp),
@@ -104,6 +122,13 @@ struct BurnRateChartView: View {
                                 .foregroundStyle(.orange)
                                 .interpolationMethod(.catmullRom)
                                 
+                                PointMark(
+                                    x: .value("Time", dataPoint.timestamp),
+                                    y: .value("Burn Rate", burnRate)
+                                )
+                                .foregroundStyle(.orange)
+                                .symbolSize(60)
+                                
                                 AreaMark(
                                     x: .value("Time", dataPoint.timestamp),
                                     y: .value("Burn Rate", burnRate)
@@ -117,7 +142,7 @@ struct BurnRateChartView: View {
                 .chartXAxis {
                     AxisMarks(values: .automatic) { _ in
                         AxisGridLine()
-                        AxisValueLabel(format: .dateTime.hour().minute())
+                        AxisValueLabel(format: chartData.count <= 1 ? .dateTime.hour() : .dateTime.hour().minute())
                     }
                 }
                 .chartYAxis {
@@ -133,8 +158,10 @@ struct BurnRateChartView: View {
                     }
                 }
                 .chartYScale(domain: yAxisDomain)
+                .chartXScale(domain: xAxisDomain)
                 .chartLegend(position: .top, alignment: .leading)
                 .frame(height: 250)
+                .id("\(selectedTimeRange)-\(selectedMetric)")
             }
             
             // Summary statistics
@@ -154,14 +181,68 @@ struct BurnRateChartView: View {
             return block.startTime >= cutoffDate && !block.isGap
         }
         
-        return filteredBlocks.map { block in
-            ChartDataPoint(
-                timestamp: block.startTime,
-                tokens: block.tokenCounts.totalTokens,
-                cost: block.costUSD,
-                burnRate: block.burnRate?.tokensPerHour
-            )
-        }.sorted { $0.timestamp < $1.timestamp }
+        // For active sessions or sessions with multiple entries, show individual entries
+        // Otherwise show block-level summaries
+        var dataPoints: [ChartDataPoint] = []
+        
+        for block in filteredBlocks {
+            if block.isActive || block.entries.count > 5 {
+                // Use individual entries for more granular data
+                var cumulativeTokens = 0
+                var cumulativeCost = 0.0
+                
+                for entry in block.entries {
+                    // Only include entries that are within the selected time range
+                    if entry.timestamp >= cutoffDate {
+                        cumulativeTokens += entry.totalTokens
+                        cumulativeCost += entry.cost
+                        
+                        // Calculate burn rate based on time since session start
+                        let elapsedHours = entry.timestamp.timeIntervalSince(block.startTime) / 3600
+                        let burnRate = elapsedHours > 0 ? Int(Double(cumulativeTokens) / elapsedHours) : 0
+                        
+                        dataPoints.append(ChartDataPoint(
+                            timestamp: entry.timestamp,
+                            tokens: cumulativeTokens,
+                            cost: cumulativeCost,
+                            burnRate: burnRate > 0 ? burnRate : nil
+                        ))
+                    }
+                }
+            } else {
+                // Use block summary for completed sessions with few entries
+                dataPoints.append(ChartDataPoint(
+                    timestamp: block.startTime,
+                    tokens: block.tokenCounts.totalTokens,
+                    cost: block.costUSD,
+                    burnRate: block.burnRate?.tokensPerHour
+                ))
+            }
+        }
+        
+        return dataPoints.sorted { $0.timestamp < $1.timestamp }
+    }
+    
+    private var xAxisDomain: ClosedRange<Date> {
+        if chartData.isEmpty {
+            let now = Date()
+            return now.addingTimeInterval(-3600)...now // Default 1 hour range
+        }
+        
+        let timestamps = chartData.map { $0.timestamp }
+        let minDate = timestamps.min() ?? Date()
+        let maxDate = timestamps.max() ?? Date()
+        
+        // If we only have one data point or a very small time range
+        let timeRange = maxDate.timeIntervalSince(minDate)
+        if timeRange < 300 { // Less than 5 minutes
+            // Extend the range to show at least 30 minutes
+            return minDate.addingTimeInterval(-900)...maxDate.addingTimeInterval(900)
+        }
+        
+        // Add 5% padding on each side
+        let padding = timeRange * 0.05
+        return minDate.addingTimeInterval(-padding)...maxDate.addingTimeInterval(padding)
     }
     
     private var yAxisDomain: ClosedRange<Double> {

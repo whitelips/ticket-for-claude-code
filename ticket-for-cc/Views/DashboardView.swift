@@ -13,53 +13,50 @@ struct DashboardView: View {
     @State private var showingSettings = false
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // Header with timeframe selector
-                HeaderView(selectedTimeframe: $selectedTimeframe)
-                
-                if usageService.isLoading {
-                    LoadingView()
-                } else if usageService.analytics.sessionBlocks.isEmpty {
-                    EmptyStateView()
-                } else {
-                    // Main content
-                    ScrollView {
-                        LazyVStack(spacing: 20) {
-                            // Current session overview
-                            if let activeBlock = usageService.activeSessionBlock {
-                                ActiveSessionOverview(block: activeBlock)
-                            }
-                            
-                            // Usage statistics cards
-                            UsageStatisticsGrid(
-                                blocks: filteredBlocks,
-                                timeframe: selectedTimeframe
-                            )
-                            
-                            // Burn rate chart
-                            if !filteredBlocks.isEmpty {
-                                BurnRateChartView(blocks: filteredBlocks)
-                                    .frame(height: 350)
-                            }
-                            
-                            // Session history
-                            SessionHistoryView(blocks: filteredBlocks)
+        VStack(spacing: 0) {
+            // Header with timeframe selector
+            HeaderView(selectedTimeframe: $selectedTimeframe)
+            
+            if usageService.isLoading {
+                LoadingView()
+            } else if usageService.analytics.sessionBlocks.isEmpty {
+                EmptyStateView()
+            } else {
+                // Main content
+                ScrollView {
+                    LazyVStack(spacing: 20) {
+                        // Current session overview
+                        if let activeBlock = usageService.activeSessionBlock {
+                            ActiveSessionOverview(block: activeBlock)
                         }
-                        .padding()
+                        
+                        // Usage statistics cards
+                        UsageStatisticsGrid(
+                            blocks: filteredBlocks,
+                            timeframe: selectedTimeframe
+                        )
+                        
+                        // Burn rate chart
+                        if !filteredBlocks.isEmpty {
+                            BurnRateChartView(blocks: filteredBlocks)
+                                .frame(height: 350)
+                        }
+                        
+                        // Session history
+                        SessionHistoryView(blocks: filteredBlocks)
                     }
+                    .padding()
                 }
             }
-            .navigationTitle("Claude Usage Monitor")
-            .toolbar {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button(action: { usageService.refreshData() }) {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    
-                    Button(action: { showingSettings = true }) {
-                        Image(systemName: "gear")
-                    }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: { usageService.refreshData() }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                
+                Button(action: { showingSettings = true }) {
+                    Image(systemName: "gear")
                 }
             }
         }
