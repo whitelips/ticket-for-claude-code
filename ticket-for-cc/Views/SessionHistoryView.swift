@@ -34,7 +34,7 @@ struct SessionHistoryView: View {
                     }
                 }
                 .pickerStyle(MenuPickerStyle())
-                .frame(width: 120)
+                .frame(minWidth: 150)
             }
             
             if filteredBlocks.isEmpty {

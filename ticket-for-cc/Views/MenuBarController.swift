@@ -8,6 +8,18 @@
 import SwiftUI
 import AppKit
 
+enum MenuBarDisplayMode: String, CaseIterable {
+    case tokens = "tokens"
+    case cost = "cost"
+    
+    var displayName: String {
+        switch self {
+        case .tokens: return "Tokens"
+        case .cost: return "Cost"
+        }
+    }
+}
+
 class MenuBarController: ObservableObject {
     private var statusItem: NSStatusItem
     private var popover: NSPopover
@@ -21,6 +33,14 @@ class MenuBarController: ObservableObject {
     @Published var totalTokensToday: Int = 0
     @Published var totalCostToday: Double = 0.0
     
+    // Display preference
+    @Published var displayMode: MenuBarDisplayMode = .tokens {
+        didSet {
+            UserDefaults.standard.set(displayMode.rawValue, forKey: "MenuBarDisplayMode")
+            updateMenuBarDisplay()
+        }
+    }
+    
     init() {
         // Create status item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -29,6 +49,12 @@ class MenuBarController: ObservableObject {
         popover = NSPopover()
         popover.contentSize = NSSize(width: 400, height: 600)
         popover.behavior = .transient
+        
+        // Load saved display mode preference
+        if let savedMode = UserDefaults.standard.string(forKey: "MenuBarDisplayMode"),
+           let mode = MenuBarDisplayMode(rawValue: savedMode) {
+            displayMode = mode
+        }
         
         setupStatusItem()
         setupPopover()
@@ -61,6 +87,21 @@ class MenuBarController: ObservableObject {
         
         menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem.separator())
+        
+        // Display mode submenu
+        let displayMenu = NSMenu(title: "Display")
+        let displayMenuItem = NSMenuItem(title: "Display", action: nil, keyEquivalent: "")
+        displayMenuItem.submenu = displayMenu
+        
+        for mode in MenuBarDisplayMode.allCases {
+            let modeItem = NSMenuItem(title: mode.displayName, action: #selector(changeDisplayMode(_:)), keyEquivalent: "")
+            modeItem.representedObject = mode
+            modeItem.state = displayMode == mode ? .on : .off
+            displayMenu.addItem(modeItem)
+        }
+        
+        menu.addItem(displayMenuItem)
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Refresh Data", action: #selector(refreshData), keyEquivalent: "r"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
@@ -68,6 +109,11 @@ class MenuBarController: ObservableObject {
         // Set targets
         for item in menu.items {
             item.target = self
+            if let submenu = item.submenu {
+                for subItem in submenu.items {
+                    subItem.target = self
+                }
+            }
         }
         
         return menu
@@ -115,6 +161,14 @@ class MenuBarController: ObservableObject {
         NSApp.terminate(nil)
     }
     
+    @objc func changeDisplayMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? MenuBarDisplayMode else { return }
+        displayMode = mode
+        
+        // Update menu states
+        statusItem.menu = createMenu()
+    }
+    
     func updateUsageData() {
         Task {
             do {
@@ -158,6 +212,15 @@ class MenuBarController: ObservableObject {
             return
         }
         
+        switch displayMode {
+        case .tokens:
+            updateMenuBarDisplayTokens(button: button)
+        case .cost:
+            updateMenuBarDisplayCost(button: button)
+        }
+    }
+    
+    private func updateMenuBarDisplayTokens(button: NSStatusBarButton) {
         if let activeBlock = activeBlock {
             // Show current session info
             let tokens = activeBlock.tokenCounts.totalTokens
@@ -178,6 +241,27 @@ class MenuBarController: ObservableObject {
         }
     }
     
+    private func updateMenuBarDisplayCost(button: NSStatusBarButton) {
+        if let activeBlock = activeBlock {
+            // Show current session cost
+            let cost = activeBlock.costUSD
+            let formattedCost = formatCost(cost)
+            
+            if let burnRate = activeBlock.burnRate {
+                let costPerHour = burnRate.costPerHour
+                button.title = "🎫 \(formattedCost) ($\(String(format: "%.2f", costPerHour))/h)"
+            } else {
+                button.title = "🎫 \(formattedCost)"
+            }
+        } else if totalCostToday > 0 {
+            // Show today's total cost if no active session
+            let formattedCost = formatCost(totalCostToday)
+            button.title = "🎫 \(formattedCost) today"
+        } else {
+            button.title = "🎫 Ready"
+        }
+    }
+    
     private func formatTokenCount(_ count: Int) -> String {
         if count >= 1_000_000 {
             return String(format: "%.1fM", Double(count) / 1_000_000)
@@ -185,6 +269,14 @@ class MenuBarController: ObservableObject {
             return String(format: "%.1fK", Double(count) / 1_000)
         } else {
             return "\(count)"
+        }
+    }
+    
+    private func formatCost(_ cost: Double) -> String {
+        if cost >= 1.0 {
+            return String(format: "$%.2f", cost)
+        } else {
+            return String(format: "$%.3f", cost)
         }
     }
     
@@ -212,6 +304,16 @@ struct MenuBarPopoverView: View {
                     .font(.headline)
                     .fontWeight(.bold)
                 Spacer()
+                
+                // Display mode indicator
+                Text("Showing: \(controller.displayMode.displayName)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.gray.opacity(0.2))
+                    .cornerRadius(4)
+                
                 Button("Refresh") {
                     controller.refreshData()
                 }
