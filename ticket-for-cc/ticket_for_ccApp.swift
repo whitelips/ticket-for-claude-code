@@ -12,12 +12,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Configure app to run as menu bar app
-        NSApp.setActivationPolicy(.accessory)
+        // Configure app activation policy based on settings
+        if Settings.shared.showDockIcon {
+            NSApp.setActivationPolicy(.regular)
+        } else {
+            NSApp.setActivationPolicy(.accessory)
+        }
         
         // Initialize menu bar controller
         menuBarController = MenuBarController()
         menuBarController?.startMonitoring()
+        
+        // Always start with dashboard view
+        DispatchQueue.main.async {
+            // Ensure dashboard window is visible
+            if let window = NSApp.windows.first(where: { $0.title == "Dashboard" }) {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -34,15 +46,19 @@ struct ticket_for_ccApp: App {
         // Main dashboard window (hidden by default for menu bar app)
         WindowGroup("Dashboard") {
             DashboardView()
-                .frame(minWidth: 1000, minHeight: 700)
+                .frame(minWidth: 800, idealWidth: 900, maxWidth: .infinity, minHeight: 600, idealHeight: 650, maxHeight: .infinity)
         }
         .handlesExternalEvents(matching: Set(arrayLiteral: "dashboard"))
-        .defaultSize(width: 1200, height: 800)
-        
-        // Settings window
-        Settings {
-            SettingsView()
-                .frame(width: 400, height: 300)
+        .windowResizability(.contentSize)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    if let appDelegate = NSApp.delegate as? AppDelegate {
+                        appDelegate.menuBarController?.openSettings()
+                    }
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

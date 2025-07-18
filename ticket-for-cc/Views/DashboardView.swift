@@ -58,13 +58,14 @@ struct DashboardView: View {
                 Button(action: { showingSettings = true }) {
                     Image(systemName: "gear")
                 }
+                .keyboardShortcut(",", modifiers: .command)
             }
         }
         .onAppear {
             // Monitoring starts automatically in ClaudeUsageService init
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsView()
+            AppSettingsView()
         }
     }
     
@@ -328,29 +329,6 @@ struct StatCard: View {
     }
 }
 
-struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        VStack {
-            Text("Settings")
-                .font(.title)
-                .padding()
-            
-            Text("Settings coming soon...")
-                .foregroundColor(.secondary)
-            
-            Spacer()
-            
-            Button("Done") {
-                dismiss()
-            }
-            .buttonStyle(.borderedProminent)
-            .padding()
-        }
-        .frame(width: 400, height: 300)
-    }
-}
 
 // MARK: - Enums
 

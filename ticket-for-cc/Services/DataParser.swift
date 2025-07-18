@@ -39,8 +39,6 @@ class DataParser {
                     // Only include entries that have usage data (skip conversation messages, etc.)
                     if entry.hasUsageData {
                         entries.append(entry)
-                    } else {
-                        logger.debug("Skipping entry without usage data at line \(index + 1) in \(url.lastPathComponent)")
                     }
                 }
             } catch {

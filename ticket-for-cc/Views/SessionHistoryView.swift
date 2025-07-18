@@ -10,7 +10,7 @@ import SwiftUI
 struct SessionHistoryView: View {
     let blocks: [SessionBlock]
     @State private var sortOrder: SortOrder = .newestFirst
-    @State private var showingGaps = false
+    @State private var showingGaps = Settings.shared.showInactiveSessionsByDefault
     @State private var selectedSession: SessionBlock?
     
     var body: some View {

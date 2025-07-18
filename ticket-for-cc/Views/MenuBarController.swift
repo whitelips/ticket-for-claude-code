@@ -8,21 +8,11 @@
 import SwiftUI
 import AppKit
 
-enum MenuBarDisplayMode: String, CaseIterable {
-    case tokens = "tokens"
-    case cost = "cost"
-    
-    var displayName: String {
-        switch self {
-        case .tokens: return "Tokens"
-        case .cost: return "Cost"
-        }
-    }
-}
 
 class MenuBarController: ObservableObject {
     private var statusItem: NSStatusItem
     private var popover: NSPopover
+    private var settingsWindow: NSWindow?
     @Published var currentUsage: String = "Loading..."
     @Published var burnRate: String = "--"
     @Published var isConnected: Bool = false
@@ -33,12 +23,10 @@ class MenuBarController: ObservableObject {
     @Published var totalTokensToday: Int = 0
     @Published var totalCostToday: Double = 0.0
     
-    // Display preference
-    @Published var displayMode: MenuBarDisplayMode = .tokens {
-        didSet {
-            UserDefaults.standard.set(displayMode.rawValue, forKey: "MenuBarDisplayMode")
-            updateMenuBarDisplay()
-        }
+    // Display preference - now using Settings
+    var displayMode: MenuBarDisplayMode {
+        get { Settings.shared.menuBarDisplayMode }
+        set { Settings.shared.menuBarDisplayMode = newValue }
     }
     
     init() {
@@ -50,11 +38,7 @@ class MenuBarController: ObservableObject {
         popover.contentSize = NSSize(width: 400, height: 600)
         popover.behavior = .transient
         
-        // Load saved display mode preference
-        if let savedMode = UserDefaults.standard.string(forKey: "MenuBarDisplayMode"),
-           let mode = MenuBarDisplayMode(rawValue: savedMode) {
-            displayMode = mode
-        }
+        // Display mode is now handled by Settings
         
         setupStatusItem()
         setupPopover()
@@ -104,6 +88,8 @@ class MenuBarController: ObservableObject {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Refresh Data", action: #selector(refreshData), keyEquivalent: "r"))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         
         // Set targets
@@ -133,21 +119,26 @@ class MenuBarController: ObservableObject {
         // Open main dashboard window
         NSApp.activate(ignoringOtherApps: true)
         
-        // Find or create main window
-        if let window = NSApp.windows.first(where: { $0.contentViewController is NSHostingController<ContentView> }) {
+        // Find existing dashboard window
+        if let window = NSApp.windows.first(where: { $0.title == "Dashboard" }) {
+            // Just bring existing window to front - don't resize
             window.makeKeyAndOrderFront(nil)
         } else {
-            // Create new window if needed
-            let contentView = ContentView()
+            // Create new dashboard window with initial size
+            let dashboardView = DashboardView()
+            let hostingController = NSHostingController(rootView: dashboardView)
+            
+            // Create window with initial content-appropriate size
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                contentRect: NSRect(x: 0, y: 0, width: 900, height: 650),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
+            window.title = "Dashboard"
+            window.contentViewController = hostingController
             window.center()
             window.setFrameAutosaveName("DashboardWindow")
-            window.contentViewController = NSHostingController(rootView: contentView)
             window.makeKeyAndOrderFront(nil)
         }
     }
@@ -167,6 +158,32 @@ class MenuBarController: ObservableObject {
         
         // Update menu states
         statusItem.menu = createMenu()
+    }
+    
+    @objc func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Check if settings window is already open
+        if let window = settingsWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            // Create new settings window
+            let settingsView = AppSettingsView()
+            let hostingController = NSHostingController(rootView: settingsView)
+            
+            settingsWindow = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+                styleMask: [.titled, .closable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            
+            settingsWindow?.title = "Settings"
+            settingsWindow?.center()
+            settingsWindow?.contentViewController = hostingController
+            settingsWindow?.isReleasedWhenClosed = false
+            settingsWindow?.makeKeyAndOrderFront(nil)
+        }
     }
     
     func updateUsageData() {
@@ -273,21 +290,42 @@ class MenuBarController: ObservableObject {
     }
     
     private func formatCost(_ cost: Double) -> String {
-        if cost >= 1.0 {
+        let decimalPlaces = Settings.shared.costDecimalPlaces
+        if cost >= 1.0 && decimalPlaces > 2 {
             return String(format: "$%.2f", cost)
         } else {
-            return String(format: "$%.3f", cost)
+            return String(format: "$%.\(decimalPlaces)f", cost)
         }
     }
+    
+    private var refreshTimer: Timer?
     
     func startMonitoring() {
         // Initial data load
         updateUsageData()
         
-        // Set up timer for regular updates (every 3 seconds)
-        Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+        // Set up timer for regular updates based on settings
+        scheduleRefreshTimer()
+        
+        // Observe settings changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(settingsChanged),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
+    }
+    
+    private func scheduleRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: Settings.shared.menuBarRefreshInterval, repeats: true) { _ in
             self.updateUsageData()
         }
+    }
+    
+    @objc private func settingsChanged() {
+        // Reschedule timer if refresh interval changed
+        scheduleRefreshTimer()
     }
 }
 
