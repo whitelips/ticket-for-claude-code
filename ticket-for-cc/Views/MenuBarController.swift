@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 
 class MenuBarController: ObservableObject {
@@ -243,7 +244,7 @@ class MenuBarController: ObservableObject {
             let tokens = activeBlock.tokenCounts.totalTokens
             let formattedTokens = formatTokenCount(tokens)
             
-            if let burnRate = activeBlock.burnRate {
+            if let burnRate = activeBlock.burnRate, Settings.shared.showMenuBarBurnRate {
                 let tokensPerHour = burnRate.tokensPerHour
                 button.title = "🎫 \(formattedTokens) (\(formatTokenCount(tokensPerHour))/h)"
             } else {
@@ -264,7 +265,7 @@ class MenuBarController: ObservableObject {
             let cost = activeBlock.costUSD
             let formattedCost = formatCost(cost)
             
-            if let burnRate = activeBlock.burnRate {
+            if let burnRate = activeBlock.burnRate, Settings.shared.showMenuBarBurnRate {
                 let costPerHour = burnRate.costPerHour
                 button.title = "🎫 \(formattedCost) ($\(String(format: "%.2f", costPerHour))/h)"
             } else {
@@ -299,6 +300,7 @@ class MenuBarController: ObservableObject {
     }
     
     private var refreshTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
     
     func startMonitoring() {
         // Initial data load
@@ -314,6 +316,14 @@ class MenuBarController: ObservableObject {
             name: UserDefaults.didChangeNotification,
             object: nil
         )
+        
+        // Observe Settings object changes directly
+        Settings.shared.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async {
+                self?.updateMenuBarDisplay()
+                self?.statusItem.menu = self?.createMenu()
+            }
+        }.store(in: &cancellables)
     }
     
     private func scheduleRefreshTimer() {
@@ -326,6 +336,10 @@ class MenuBarController: ObservableObject {
     @objc private func settingsChanged() {
         // Reschedule timer if refresh interval changed
         scheduleRefreshTimer()
+        // Update menu bar display immediately when settings change
+        updateMenuBarDisplay()
+        // Recreate menu to reflect display mode changes
+        statusItem.menu = createMenu()
     }
 }
 
