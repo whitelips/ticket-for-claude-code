@@ -14,12 +14,30 @@ struct SessionHistoryView: View {
     @State private var selectedSession: SessionBlock?
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header with controls
+        GeometryReader { geometry in
+            VStack(alignment: .leading, spacing: 16) {
+                // Header with responsive controls
+                headerSection(for: geometry.size.width)
+                
+                // Content
+                sessionListContent(for: geometry.size.width)
+            }
+        }
+        .cardStyle()
+        .sheet(item: $selectedSession) { session in
+            SessionDetailView(block: session)
+        }
+    }
+    
+    @ViewBuilder
+    private func headerSection(for width: CGFloat) -> some View {
+        if width > 600 {
+            // Wide layout - horizontal controls
             HStack {
                 Text("📋 Session History")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .font(DesignSystem.Typography.title2Font)
+                    .fontWeight(DesignSystem.Typography.boldWeight)
+                    .foregroundColor(DesignSystem.Colors.primaryText)
                 
                 Spacer()
                 
@@ -36,35 +54,59 @@ struct SessionHistoryView: View {
                 .pickerStyle(MenuPickerStyle())
                 .frame(minWidth: 150)
             }
-            
-            if filteredBlocks.isEmpty {
-                EmptySessionsView()
-            } else {
-                // Session list
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(filteredBlocks, id: \.id) { block in
-                            SessionRowView(
-                                block: block,
-                                isSelected: selectedSession?.id == block.id
-                            )
-                            .onTapGesture {
-                                selectedSession = selectedSession?.id == block.id ? nil : block
-                            }
+        } else {
+            // Narrow layout - vertical controls
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                Text("📋 Session History")
+                    .font(DesignSystem.Typography.title2Font)
+                    .fontWeight(DesignSystem.Typography.boldWeight)
+                    .foregroundColor(DesignSystem.Colors.primaryText)
+                
+                HStack {
+                    // Toggle for showing gaps
+                    Toggle("Show gaps", isOn: $showingGaps)
+                        .toggleStyle(SwitchToggleStyle())
+                    
+                    Spacer()
+                    
+                    // Sort order picker
+                    Picker("Sort", selection: $sortOrder) {
+                        ForEach(SortOrder.allCases, id: \.self) { order in
+                            Text(order.displayName).tag(order)
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .frame(maxWidth: 150)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func sessionListContent(for width: CGFloat) -> some View {
+        if filteredBlocks.isEmpty {
+            EmptySessionsView()
+        } else {
+            // Session list
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(filteredBlocks, id: \.id) { block in
+                        SessionRowView(
+                            block: block,
+                            isSelected: selectedSession?.id == block.id,
+                            availableWidth: width
+                        )
+                        .onTapGesture {
+                            selectedSession = selectedSession?.id == block.id ? nil : block
                         }
                     }
                 }
-                .frame(maxHeight: 400)
-                
-                // Summary
-                SessionSummaryView(blocks: filteredBlocks.filter { !$0.isGap })
+                .padding(.vertical, 8)
             }
-        }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
-        .sheet(item: $selectedSession) { session in
-            SessionDetailView(block: session)
+            .frame(minHeight: 150, maxHeight: 400)
+            
+            // Summary
+            SessionSummaryView(blocks: filteredBlocks.filter { !$0.isGap })
         }
     }
     
@@ -89,9 +131,43 @@ struct SessionHistoryView: View {
 struct SessionRowView: View {
     let block: SessionBlock
     let isSelected: Bool
+    let availableWidth: CGFloat
     
     var body: some View {
-        HStack(spacing: 16) {
+        sessionRow(for: availableWidth)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
+            )
+    }
+    
+    @ViewBuilder
+    private func sessionRow(for width: CGFloat) -> some View {
+        if width > 800 {
+            // Ultra wide layout - full details
+            ultraWideLayoutRow
+        } else if width > 650 {
+            // Wide layout - most details
+            wideLayoutRow
+        } else if width > 520 {
+            // Medium layout - essential details
+            mediumLayoutRow
+        } else if width > 400 {
+            // Compact layout - minimal horizontal
+            compactLayoutRow
+        } else {
+            // Narrow layout - vertical stack
+            narrowLayoutRow
+        }
+    }
+    
+    @ViewBuilder
+    private var ultraWideLayoutRow: some View {
+        HStack(spacing: 12) {
             // Status indicator
             Circle()
                 .fill(statusColor)
@@ -99,13 +175,13 @@ struct SessionRowView: View {
             
             // Session title and time info
             VStack(alignment: .leading, spacing: 4) {
-                // Session title
                 Text(sessionTitle)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 
-                // Time info
                 HStack(spacing: 8) {
                     Text(block.startTime, style: .date)
                         .font(.caption)
@@ -115,7 +191,7 @@ struct SessionRowView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .frame(width: 140, alignment: .leading)
+            .frame(minWidth: 140, maxWidth: 180, alignment: .leading)
             
             // Duration
             VStack(alignment: .leading, spacing: 2) {
@@ -126,6 +202,7 @@ struct SessionRowView: View {
                     Text(formatDuration(block.endTime.timeIntervalSince(block.startTime)))
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 } else {
                     Text("Duration")
                         .font(.caption)
@@ -133,9 +210,10 @@ struct SessionRowView: View {
                     Text(formatDuration(block.elapsedMinutes * 60))
                         .font(.caption2)
                         .fontWeight(.medium)
+                        .lineLimit(1)
                 }
             }
-            .frame(width: 60, alignment: .leading)
+            .frame(minWidth: 60, maxWidth: 80, alignment: .leading)
             
             // Usage info (only for non-gap blocks)
             if !block.isGap {
@@ -146,8 +224,9 @@ struct SessionRowView: View {
                     Text("\(formatTokenCount(block.tokenCounts.totalTokens))")
                         .font(.caption2)
                         .fontWeight(.medium)
+                        .lineLimit(1)
                 }
-                .frame(width: 60, alignment: .leading)
+                .frame(minWidth: 50, maxWidth: 70, alignment: .leading)
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Cost")
@@ -157,10 +236,10 @@ struct SessionRowView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                         .foregroundColor(.green)
+                        .lineLimit(1)
                 }
-                .frame(width: 60, alignment: .leading)
+                .frame(minWidth: 50, maxWidth: 70, alignment: .leading)
                 
-                // Burn rate
                 if let burnRate = block.burnRate {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Burn Rate")
@@ -170,11 +249,11 @@ struct SessionRowView: View {
                             .font(.caption2)
                             .fontWeight(.medium)
                             .foregroundColor(.blue)
+                            .lineLimit(1)
                     }
-                    .frame(width: 80, alignment: .leading)
+                    .frame(minWidth: 70, maxWidth: 90, alignment: .leading)
                 }
                 
-                // Models used
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Models")
                         .font(.caption)
@@ -188,6 +267,7 @@ struct SessionRowView: View {
                                 .background(modelColor(model).opacity(0.2))
                                 .foregroundColor(modelColor(model))
                                 .cornerRadius(3)
+                                .lineLimit(1)
                         }
                         if block.models.count > 2 {
                             Text("+\(block.models.count - 2)")
@@ -196,35 +276,397 @@ struct SessionRowView: View {
                         }
                     }
                 }
+                .frame(minWidth: 80, maxWidth: 120)
             }
             
             Spacer()
             
-            // Active indicator
-            if block.isActive {
-                HStack(spacing: 4) {
+            // Status indicators
+            VStack(spacing: 4) {
+                if block.isActive {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                        Text("Active")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
+                }
+                
+                Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(minWidth: 60)
+        }
+    }
+    
+    @ViewBuilder
+    private var wideLayoutRow: some View {
+        HStack(spacing: 10) {
+            // Status indicator
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+            
+            // Session title and time
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sessionTitle)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                
+                Text(block.startTime, style: .time)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 120, maxWidth: 160, alignment: .leading)
+            
+            // Usage info (only for non-gap blocks)
+            if !block.isGap {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Tokens")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("\(formatTokenCount(block.tokenCounts.totalTokens))")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 50, maxWidth: 70, alignment: .leading)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cost")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(String(format: "$%.3f", block.costUSD))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 50, maxWidth: 70, alignment: .leading)
+                    
+                    if let burnRate = block.burnRate {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Rate")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("\(formatTokenCount(burnRate.tokensPerHour))/h")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                                .lineLimit(1)
+                        }
+                        .frame(minWidth: 60, maxWidth: 80, alignment: .leading)
+                    }
+                }
+            } else {
+                // Gap duration info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Gap Duration")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(formatDuration(block.endTime.timeIntervalSince(block.startTime)))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(minWidth: 80, maxWidth: 120, alignment: .leading)
+            }
+            
+            Spacer()
+            
+            // Status and expand
+            VStack(spacing: 2) {
+                if block.isActive {
                     Circle()
                         .fill(Color.green)
                         .frame(width: 6, height: 6)
-                    Text("Active")
-                        .font(.caption2)
-                        .foregroundColor(.green)
                 }
+                
+                Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(minWidth: 30)
+        }
+    }
+    
+    @ViewBuilder
+    private var compactLayoutRow: some View {
+        HStack(spacing: 6) {
+            // Status indicator
+            Circle()
+                .fill(statusColor)
+                .frame(width: 6, height: 6)
+            
+            // Session title and time
+            VStack(alignment: .leading, spacing: 1) {
+                Text(sessionTitle)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                
+                Text(block.startTime, style: .time)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 90, maxWidth: 130, alignment: .leading)
+            
+            // Essential metrics only
+            if !block.isGap {
+                HStack(spacing: 4) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Tokens")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("\(formatTokenCount(block.tokenCounts.totalTokens))")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 45, maxWidth: 60, alignment: .leading)
+                    
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Cost")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(String(format: "$%.2f", block.costUSD))
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 40, maxWidth: 55, alignment: .leading)
+                }
+            } else {
+                // Gap duration for gaps
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Duration")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(formatDuration(block.endTime.timeIntervalSince(block.startTime)))
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(minWidth: 60, maxWidth: 80, alignment: .leading)
             }
             
-            // Expand indicator
-            Image(systemName: isSelected ? "chevron.up" : "chevron.down")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Spacer()
+            
+            // Minimal status
+            VStack(spacing: 1) {
+                if block.isActive {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 4, height: 4)
+                }
+                
+                Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(minWidth: 20)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
-        .cornerRadius(6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
-        )
+    }
+    
+    @ViewBuilder
+    private var mediumLayoutRow: some View {
+        HStack(spacing: 8) {
+            // Status indicator
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+            
+            // Main info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sessionTitle)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                
+                Text(block.startTime, style: .time)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 130, maxWidth: 180, alignment: .leading)
+            
+            // Key metrics
+            if !block.isGap {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Tokens")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("\(formatTokenCount(block.tokenCounts.totalTokens))")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 55, maxWidth: 75, alignment: .leading)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cost")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(String(format: "$%.3f", block.costUSD))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 55, maxWidth: 75, alignment: .leading)
+                }
+            } else {
+                // Gap duration and info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Gap Duration")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(formatDuration(block.endTime.timeIntervalSince(block.startTime)))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(minWidth: 80, maxWidth: 120, alignment: .leading)
+            }
+            
+            Spacer()
+            
+            // Status and expand
+            VStack(spacing: 2) {
+                if block.isActive {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 6, height: 6)
+                }
+                
+                Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(minWidth: 30)
+        }
+    }
+    
+    @ViewBuilder
+    private var narrowLayoutRow: some View {
+        VStack(spacing: 6) {
+            // First row: status, title, and controls
+            HStack(spacing: 8) {
+                // Status indicator
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
+                
+                // Main info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(sessionTitle)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .multilineTextAlignment(.leading)
+                    
+                    Text(block.startTime, style: .time)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Status and expand
+                VStack(spacing: 2) {
+                    if block.isActive {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                    }
+                    
+                    Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(minWidth: 20)
+            }
+            
+            // Second row: metrics or gap info
+            if !block.isGap {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Tokens")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("\(formatTokenCount(block.tokenCounts.totalTokens))")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cost")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(String(format: "$%.3f", block.costUSD))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    if let burnRate = block.burnRate {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Rate")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("\(formatTokenCount(burnRate.tokensPerHour))/h")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else {
+                // Gap information
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Gap Duration")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(formatDuration(block.endTime.timeIntervalSince(block.startTime)))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
     
     private var statusColor: Color {
@@ -391,9 +833,9 @@ struct SessionSummaryView: View {
             
             Spacer()
         }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(8)
+        .padding(DesignSystem.Spacing.lg)
+        .background(DesignSystem.Colors.cardBackground.opacity(0.5))
+        .cornerRadius(DesignSystem.Spacing.sm)
     }
     
     private var totalTokens: Int {

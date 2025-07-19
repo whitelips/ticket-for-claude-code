@@ -14,12 +14,28 @@ struct BurnRateChartView: View {
     @State private var selectedTimeRange: ChartTimeRange = .last4Hours
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header with controls
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+            // Header with responsive controls
+            GeometryReader { geometry in
+                headerSection(for: geometry.size.width)
+            }
+            .frame(height: 60) // Fixed height for header
+            
+            // Chart with integrated summary
+            chartWithSummary
+        }
+        .elevatedCardStyle()
+    }
+    
+    @ViewBuilder
+    private func headerSection(for width: CGFloat) -> some View {
+        if width > 600 {
+            // Wide layout - horizontal controls
             HStack {
                 Text("📈 Usage Trends")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .font(DesignSystem.Typography.title2Font)
+                    .fontWeight(DesignSystem.Typography.boldWeight)
+                    .foregroundColor(DesignSystem.Colors.primaryText)
                 
                 Spacer()
                 
@@ -34,8 +50,8 @@ struct BurnRateChartView: View {
                 
                 // Time range selector  
                 Text("Time Range")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(DesignSystem.Typography.captionFont)
+                    .foregroundColor(DesignSystem.Colors.secondaryText)
                 
                 Picker(selection: $selectedTimeRange, label: EmptyView()) {
                     ForEach(ChartTimeRange.allCases, id: \.self) { range in
@@ -45,134 +61,182 @@ struct BurnRateChartView: View {
                 .pickerStyle(MenuPickerStyle())
                 .frame(width: 80)
             }
-            
-            // Chart
-            if chartData.isEmpty {
-                // Empty state
-                VStack(spacing: 12) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    
-                    Text("No data available")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Try selecting a different time range or check if there's recent usage data")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(height: 250)
-                .frame(maxWidth: .infinity)
-            } else {
-                Chart {
-                    ForEach(chartData, id: \.timestamp) { dataPoint in
-                        switch selectedMetric {
-                        case .tokens:
-                            LineMark(
-                                x: .value("Time", dataPoint.timestamp),
-                                y: .value("Tokens", dataPoint.tokens)
-                            )
-                            .foregroundStyle(.blue)
-                            .interpolationMethod(.catmullRom)
-                            
-                            PointMark(
-                                x: .value("Time", dataPoint.timestamp),
-                                y: .value("Tokens", dataPoint.tokens)
-                            )
-                            .foregroundStyle(.blue)
-                            .symbolSize(60)
-                            
-                            AreaMark(
-                                x: .value("Time", dataPoint.timestamp),
-                                y: .value("Tokens", dataPoint.tokens)
-                            )
-                            .foregroundStyle(.blue.opacity(0.2))
-                            .interpolationMethod(.catmullRom)
-                            
-                        case .cost:
-                            LineMark(
-                                x: .value("Time", dataPoint.timestamp),
-                                y: .value("Cost", dataPoint.cost)
-                            )
-                            .foregroundStyle(.green)
-                            .interpolationMethod(.catmullRom)
-                            
-                            PointMark(
-                                x: .value("Time", dataPoint.timestamp),
-                                y: .value("Cost", dataPoint.cost)
-                            )
-                            .foregroundStyle(.green)
-                            .symbolSize(60)
-                            
-                            AreaMark(
-                                x: .value("Time", dataPoint.timestamp),
-                                y: .value("Cost", dataPoint.cost)
-                            )
-                            .foregroundStyle(.green.opacity(0.2))
-                            .interpolationMethod(.catmullRom)
-                            
-                        case .burnRate:
-                            if let burnRate = dataPoint.burnRate {
-                                LineMark(
-                                    x: .value("Time", dataPoint.timestamp),
-                                    y: .value("Burn Rate", burnRate)
-                                )
-                                .foregroundStyle(.orange)
-                                .interpolationMethod(.catmullRom)
-                                
-                                PointMark(
-                                    x: .value("Time", dataPoint.timestamp),
-                                    y: .value("Burn Rate", burnRate)
-                                )
-                                .foregroundStyle(.orange)
-                                .symbolSize(60)
-                                
-                                AreaMark(
-                                    x: .value("Time", dataPoint.timestamp),
-                                    y: .value("Burn Rate", burnRate)
-                                )
-                                .foregroundStyle(.orange.opacity(0.2))
-                                .interpolationMethod(.catmullRom)
-                            }
+        } else {
+            // Narrow layout - vertical controls
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                Text("📈 Usage Trends")
+                    .font(DesignSystem.Typography.title2Font)
+                    .fontWeight(DesignSystem.Typography.boldWeight)
+                    .foregroundColor(DesignSystem.Colors.primaryText)
+                
+                HStack {
+                    // Metric selector - full width
+                    Picker(selection: $selectedMetric, label: EmptyView()) {
+                        ForEach(ChartMetric.allCases, id: \.self) { metric in
+                            Text(metric.displayName).tag(metric)
                         }
                     }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .automatic) { _ in
-                        AxisGridLine()
-                        AxisValueLabel(format: chartData.count <= 1 ? .dateTime.hour() : .dateTime.hour().minute())
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(values: .automatic) { value in
-                        AxisGridLine()
-                        AxisValueLabel {
-                            if let intValue = value.as(Int.self) {
-                                Text(formatYAxisValue(intValue))
-                            } else if let doubleValue = value.as(Double.self) {
-                                Text(formatYAxisValue(doubleValue))
+                    .pickerStyle(SegmentedPickerStyle())
+                    
+                    Spacer()
+                    
+                    // Time range selector  
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Time Range")
+                            .font(DesignSystem.Typography.captionFont)
+                            .foregroundColor(DesignSystem.Colors.secondaryText)
+                        
+                        Picker(selection: $selectedTimeRange, label: EmptyView()) {
+                            ForEach(ChartTimeRange.allCases, id: \.self) { range in
+                                Text(range.displayName).tag(range)
                             }
                         }
+                        .pickerStyle(MenuPickerStyle())
+                        .frame(width: 80)
                     }
                 }
-                .chartYScale(domain: yAxisDomain)
-                .chartXScale(domain: xAxisDomain)
-                .chartLegend(position: .top, alignment: .leading)
-                .frame(height: 250)
-                .id("\(selectedTimeRange)-\(selectedMetric)")
             }
+        }
+    }
+    
+    @ViewBuilder
+    private var chartWithSummary: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            // Chart section
+            chartView
             
-            // Summary statistics
+            // Summary statistics integrated within the chart area
             SummaryStatsView(
                 data: chartData,
                 metric: selectedMetric
             )
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
+        .padding(.vertical, DesignSystem.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Spacing.sm)
+                .fill(Color.gray.opacity(0.05))
+        )
+    }
+    
+    @ViewBuilder
+    private var chartView: some View {
+        // Chart
+        if chartData.isEmpty {
+            // Empty state
+            VStack(spacing: 12) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 48))
+                    .foregroundColor(.secondary)
+                
+                Text("No data available")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                
+                Text("Try selecting a different time range or check if there's recent usage data")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(height: 250)
+            .frame(maxWidth: .infinity)
+        } else {
+            Chart {
+                ForEach(chartData, id: \.timestamp) { dataPoint in
+                    switch selectedMetric {
+                    case .tokens:
+                        LineMark(
+                            x: .value("Time", dataPoint.timestamp),
+                            y: .value("Tokens", dataPoint.tokens)
+                        )
+                        .foregroundStyle(DesignSystem.Colors.chartBlue)
+                        .interpolationMethod(.catmullRom)
+                        
+                        PointMark(
+                            x: .value("Time", dataPoint.timestamp),
+                            y: .value("Tokens", dataPoint.tokens)
+                        )
+                        .foregroundStyle(DesignSystem.Colors.chartBlue)
+                        .symbolSize(60)
+                        
+                        AreaMark(
+                            x: .value("Time", dataPoint.timestamp),
+                            y: .value("Tokens", dataPoint.tokens)
+                        )
+                        .foregroundStyle(DesignSystem.Colors.blueGradient)
+                        .interpolationMethod(.catmullRom)
+                        
+                    case .cost:
+                        LineMark(
+                            x: .value("Time", dataPoint.timestamp),
+                            y: .value("Cost", dataPoint.cost)
+                        )
+                        .foregroundStyle(DesignSystem.Colors.chartGreen)
+                        .interpolationMethod(.catmullRom)
+                        
+                        PointMark(
+                            x: .value("Time", dataPoint.timestamp),
+                            y: .value("Cost", dataPoint.cost)
+                        )
+                        .foregroundStyle(DesignSystem.Colors.chartGreen)
+                        .symbolSize(60)
+                        
+                        AreaMark(
+                            x: .value("Time", dataPoint.timestamp),
+                            y: .value("Cost", dataPoint.cost)
+                        )
+                        .foregroundStyle(DesignSystem.Colors.greenGradient)
+                        .interpolationMethod(.catmullRom)
+                        
+                    case .burnRate:
+                        if let burnRate = dataPoint.burnRate {
+                            LineMark(
+                                x: .value("Time", dataPoint.timestamp),
+                                y: .value("Burn Rate", burnRate)
+                            )
+                            .foregroundStyle(DesignSystem.Colors.chartOrange)
+                            .interpolationMethod(.catmullRom)
+                            
+                            PointMark(
+                                x: .value("Time", dataPoint.timestamp),
+                                y: .value("Burn Rate", burnRate)
+                            )
+                            .foregroundStyle(DesignSystem.Colors.chartOrange)
+                            .symbolSize(60)
+                            
+                            AreaMark(
+                                x: .value("Time", dataPoint.timestamp),
+                                y: .value("Burn Rate", burnRate)
+                            )
+                            .foregroundStyle(DesignSystem.Colors.orangeGradient)
+                            .interpolationMethod(.catmullRom)
+                        }
+                    }
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: .automatic) { _ in
+                    AxisGridLine()
+                    AxisValueLabel(format: chartData.count <= 1 ? .dateTime.hour() : .dateTime.hour().minute())
+                }
+            }
+            .chartYAxis {
+                AxisMarks(values: .automatic) { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let intValue = value.as(Int.self) {
+                            Text(formatYAxisValue(intValue))
+                        } else if let doubleValue = value.as(Double.self) {
+                            Text(formatYAxisValue(doubleValue))
+                        }
+                    }
+                }
+            }
+            .chartYScale(domain: yAxisDomain)
+            .chartXScale(domain: xAxisDomain)
+            .chartLegend(position: .top, alignment: .leading)
+            .frame(height: 250)
+            .id("\(selectedTimeRange)-\(selectedMetric)")
+        }
     }
     
     private var chartData: [ChartDataPoint] {
@@ -355,18 +419,24 @@ struct SummaryStatsView: View {
     let metric: ChartMetric
     
     var body: some View {
-        HStack(spacing: 32) {
+        HStack(spacing: 24) {
             StatisticBox(
                 title: "Peak",
                 value: peakValueString,
                 color: .red
             )
             
+            Divider()
+                .frame(height: 30)
+            
             StatisticBox(
                 title: "Average",
                 value: averageValueString,
                 color: .blue
             )
+            
+            Divider()
+                .frame(height: 30)
             
             StatisticBox(
                 title: "Total",
@@ -376,6 +446,7 @@ struct SummaryStatsView: View {
             
             Spacer()
         }
+        .padding(.horizontal, DesignSystem.Spacing.sm)
     }
     
     private var peakValueString: String {
@@ -440,12 +511,12 @@ struct StatisticBox: View {
     let color: Color
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundColor(.secondary)
             Text(value)
-                .font(.headline)
+                .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(color)
         }
