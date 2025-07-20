@@ -23,11 +23,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController = MenuBarController()
         menuBarController?.startMonitoring()
         
-        // Always start with dashboard view
+        // Respect user's default view setting
         DispatchQueue.main.async {
-            // Ensure dashboard window is visible
-            if let window = NSApp.windows.first(where: { $0.title == "Dashboard" }) {
-                window.makeKeyAndOrderFront(nil)
+            // First, hide any automatically shown windows
+            for window in NSApp.windows {
+                if window.title == "Dashboard" {
+                    window.orderOut(nil)
+                }
+            }
+            
+            // Then show dashboard window only if user wants it
+            switch Settings.shared.defaultView {
+            case .dashboard:
+                // Show dashboard window
+                if let window = NSApp.windows.first(where: { $0.title == "Dashboard" }) {
+                    window.makeKeyAndOrderFront(nil)
+                }
+            case .menuBar:
+                // Menu bar only - don't show any window
+                break
+            case .minimized:
+                // Start minimized - don't show any window
+                break
             }
         }
     }

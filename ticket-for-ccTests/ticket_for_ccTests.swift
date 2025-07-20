@@ -5,13 +5,14 @@
 //  Created by 임민호 on 6/22/25.
 //
 
-import Testing
+import XCTest
 @testable import ticket_for_cc
 
-struct ticket_for_ccTests {
+class ticket_for_ccTests: XCTestCase {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    func testExample() {
+        // This is a placeholder test
+        XCTAssertTrue(true)
     }
 
 }
