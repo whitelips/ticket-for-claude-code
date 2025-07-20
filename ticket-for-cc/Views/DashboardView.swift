@@ -68,24 +68,18 @@ struct DashboardView: View {
     
     private var filteredBlocks: [SessionBlock] {
         let now = Date()
+        let calendar = Calendar.current
         
         let filtered: [SessionBlock]
         switch selectedTimeframe {
         case .today:
-            // Use UTC calendar for consistent comparison since session blocks use UTC
-            var utcCalendar = Calendar.current
-            utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-            let startOfDayUTC = utcCalendar.startOfDay(for: now)
-            filtered = usageService.analytics.sessionBlocks.filter { $0.startTime >= startOfDayUTC }
+            let startOfDay = calendar.startOfDay(for: now)
+            filtered = usageService.analytics.sessionBlocks.filter { $0.startTime >= startOfDay }
         case .thisWeek:
-            var utcCalendar = Calendar.current
-            utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-            let startOfWeek = utcCalendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+            let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
             filtered = usageService.analytics.sessionBlocks.filter { $0.startTime >= startOfWeek }
         case .thisMonth:
-            var utcCalendar = Calendar.current
-            utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-            let startOfMonth = utcCalendar.dateInterval(of: .month, for: now)?.start ?? now
+            let startOfMonth = calendar.dateInterval(of: .month, for: now)?.start ?? now
             filtered = usageService.analytics.sessionBlocks.filter { $0.startTime >= startOfMonth }
         case .all:
             filtered = usageService.analytics.sessionBlocks
